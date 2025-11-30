@@ -1,0 +1,389 @@
+'use client';
+
+import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { FileText, Image, Star, Users, Edit, Eye, Save, LogOut } from "lucide-react";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
+
+export default function LandingPageCMS() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
+
+  // Mock data for CMS content
+  const heroSection = {
+    title: "Premium Cuts",
+    subtitle: "Experience luxury grooming at our 8 locations across the city",
+    ctaPrimary: "Book Now",
+    ctaSecondary: "Find Location",
+    backgroundImage: "/api/placeholder/1920/1080",
+  };
+
+  const testimonials = [
+    { id: 1, name: "John D.", rating: 5, text: "Best barber in town! Always perfect cuts.", status: "published" },
+    { id: 2, name: "Mike R.", rating: 5, text: "Professional service and great atmosphere.", status: "published" },
+    { id: 3, name: "Alex T.", rating: 5, text: "Worth every penny. Highly recommend!", status: "draft" },
+  ];
+
+  const services = [
+    { id: 1, name: "Haircut & Styling", price: "From $35", description: "Professional cuts with modern techniques", status: "published" },
+    { id: 2, name: "Beard Grooming", price: "From $25", description: "Precision beard trimming and styling", status: "published" },
+    { id: 3, name: "Premium Packages", price: "From $65", description: "Complete grooming experience", status: "published" },
+  ];
+
+  const seoSettings = {
+    metaTitle: "Premium Cuts - Luxury Barber Shop | Book Online",
+    metaDescription: "Experience premium grooming services at Premium Cuts. Professional barbers, luxury atmosphere, 8 locations across the city.",
+    keywords: "barber, haircuts, beard grooming, luxury salon, premium cuts",
+  };
+
+  return (
+    <ProtectedRoute requiredRole="super_admin">
+      <div className="flex h-screen bg-gray-50">
+        {/* Sidebar */}
+        <AdminSidebar
+          role="super_admin"
+          onLogout={handleLogout}
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+        />
+
+        {/* Main Content */}
+        <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"}`}>
+          {/* Header */}
+          <header className="bg-white shadow-sm border-b">
+            <div className="flex items-center justify-between px-4 py-4 lg:px-8">
+              <div className="flex items-center gap-4">
+                <AdminMobileSidebar
+                  role="super_admin"
+                  onLogout={handleLogout}
+                  isOpen={sidebarOpen}
+                  onToggle={() => setSidebarOpen(!sidebarOpen)}
+                />
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Landing Page CMS</h1>
+                  <p className="text-sm text-gray-600">Manage homepage content and SEO</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600 hidden sm:block">Welcome, {user?.email}</span>
+                <Button variant="outline" onClick={handleLogout}>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </Button>
+              </div>
+            </div>
+          </header>
+
+          {/* Content */}
+          <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+            <div className="max-w-7xl mx-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Content Sections */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Hero Section */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Image className="w-5 h-5" />
+                        Hero Section
+                      </CardTitle>
+                      <CardDescription>
+                        Main banner and call-to-action content
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <Label htmlFor="hero-title">Main Title</Label>
+                        <Input id="hero-title" defaultValue={heroSection.title} />
+                      </div>
+                      <div>
+                        <Label htmlFor="hero-subtitle">Subtitle</Label>
+                        <Textarea id="hero-subtitle" defaultValue={heroSection.subtitle} rows={2} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="cta-primary">Primary CTA</Label>
+                          <Input id="cta-primary" defaultValue={heroSection.ctaPrimary} />
+                        </div>
+                        <div>
+                          <Label htmlFor="cta-secondary">Secondary CTA</Label>
+                          <Input id="cta-secondary" defaultValue={heroSection.ctaSecondary} />
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Background Image</Label>
+                        <div className="mt-2 p-4 border-2 border-dashed border-gray-300 rounded-lg text-center">
+                          <Image className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                          <p className="text-sm text-gray-600">Click to upload new background image</p>
+                          <p className="text-xs text-gray-400">PNG, JPG up to 5MB</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+            {/* Services Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Services Section
+                </CardTitle>
+                <CardDescription>
+                  Manage service offerings and pricing
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {services.map((service) => (
+                    <div key={service.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-semibold">{service.name}</h3>
+                          <Badge variant={service.status === 'published' ? 'default' : 'secondary'}>
+                            {service.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{service.description}</p>
+                        <p className="text-sm font-medium text-green-600 mt-1">{service.price}</p>
+                      </div>
+                      <Button variant="outline" size="sm">
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button className="w-full mt-4" variant="outline">Add New Service</Button>
+              </CardContent>
+            </Card>
+
+            {/* Testimonials */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Star className="w-5 h-5" />
+                  Testimonials
+                </CardTitle>
+                <CardDescription>
+                  Customer reviews and ratings
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {testimonials.map((testimonial) => (
+                    <div key={testimonial.id} className="p-4 border rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold">{testimonial.name}</h3>
+                          <div className="flex">
+                            {[...Array(testimonial.rating)].map((_, i) => (
+                              <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                            ))}
+                          </div>
+                        </div>
+                        <Badge variant={testimonial.status === 'published' ? 'default' : 'secondary'}>
+                          {testimonial.status}
+                        </Badge>
+                      </div>
+                      <p className="text-gray-600 italic">"{testimonial.text}"</p>
+                      <div className="flex gap-2 mt-3">
+                        <Button variant="outline" size="sm">
+                          <Edit className="w-4 h-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm">
+                          {testimonial.status === 'published' ? 'Unpublish' : 'Publish'}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <Button className="w-full mt-4" variant="outline">Add New Testimonial</Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* SEO Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle>SEO Settings</CardTitle>
+                <CardDescription>
+                  Optimize for search engines
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="meta-title">Meta Title</Label>
+                  <Input id="meta-title" defaultValue={seoSettings.metaTitle} />
+                </div>
+                <div>
+                  <Label htmlFor="meta-description">Meta Description</Label>
+                  <Textarea
+                    id="meta-description"
+                    defaultValue={seoSettings.metaDescription}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="keywords">Keywords</Label>
+                  <Input id="keywords" defaultValue={seoSettings.keywords} />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Analytics */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Page Analytics</CardTitle>
+                <CardDescription>
+                  Performance metrics
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Page Views (30 days)</span>
+                    <span className="font-semibold">24,580</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Unique Visitors</span>
+                    <span className="font-semibold">18,420</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Bounce Rate</span>
+                    <span className="font-semibold">32%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Avg. Session Duration</span>
+                    <span className="font-semibold">2m 45s</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Conversion Rate</span>
+                    <span className="font-semibold">8.2%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" variant="outline">
+                  Create Backup
+                </Button>
+                <Button className="w-full" variant="outline">
+                  Export Content
+                </Button>
+                <Button className="w-full" variant="outline">
+                  Clear Cache
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* SEO Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle>SEO Settings</CardTitle>
+                <CardDescription>
+                  Optimize for search engines
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="meta-title">Meta Title</Label>
+                  <Input id="meta-title" defaultValue={seoSettings.metaTitle} />
+                </div>
+                <div>
+                  <Label htmlFor="meta-description">Meta Description</Label>
+                  <Textarea
+                    id="meta-description"
+                    defaultValue={seoSettings.metaDescription}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="keywords">Keywords</Label>
+                  <Input id="keywords" defaultValue={seoSettings.keywords} />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Analytics */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Page Analytics</CardTitle>
+                <CardDescription>
+                  Performance metrics
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Page Views (30 days)</span>
+                    <span className="font-semibold">24,580</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Unique Visitors</span>
+                    <span className="font-semibold">18,420</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Bounce Rate</span>
+                    <span className="font-semibold">32%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Avg. Session Duration</span>
+                    <span className="font-semibold">2m 45s</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Conversion Rate</span>
+                    <span className="font-semibold">8.2%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" variant="outline">
+                  Create Backup
+                </Button>
+                <Button className="w-full" variant="outline">
+                  Export Content
+                </Button>
+                <Button className="w-full" variant="outline">
+                  Clear Cache
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+        </div>
+      </div>
+    </ProtectedRoute>
+  );
+}
