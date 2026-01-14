@@ -16,7 +16,7 @@ import {
   Menu
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import ProtectedRoute from "@/components/ProtectedRoute";
+
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -312,276 +312,272 @@ export default function SuperAdminBranches() {
   // Render loading state
   if (loading && branches.length === 0) {
     return (
-      <ProtectedRoute requiredRole="super_admin">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-secondary" />
-            <p className="text-muted-foreground">Loading branches...</p>
-          </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-secondary" />
+          <p className="text-muted-foreground">Loading branches...</p>
         </div>
-      </ProtectedRoute>
+      </div>
     );
   }
 
   return (
-    <ProtectedRoute requiredRole="super_admin">
-      <div className="flex h-screen bg-gray-50">
-        {/* Desktop Sidebar - Always visible on large screens */}
-        <div className="hidden lg:block">
-          <AdminSidebar role="super_admin" onLogout={handleLogout} />
-        </div>
+    <div className="flex h-screen bg-gray-50">
+      {/* Desktop Sidebar - Always visible on large screens */}
+      <div className="hidden lg:block">
+        <AdminSidebar role="super_admin" onLogout={handleLogout} />
+      </div>
 
-        {/* Mobile Sidebar Sheet */}
-        <AdminMobileSidebar 
-          role="super_admin" 
-          onLogout={handleLogout}
-          isOpen={sidebarOpen}
-          onToggle={() => setSidebarOpen(!sidebarOpen)}
-        />
+      {/* Mobile Sidebar Sheet */}
+      <AdminMobileSidebar 
+        role="super_admin" 
+        onLogout={handleLogout}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+      />
 
-        {/* Main Content Area */}
-        <div className={cn(
-          "flex-1 flex flex-col transition-all duration-300 ease-in-out",
-          sidebarOpen ? "lg:ml-64" : "lg:ml-0"
-        )}>
-          {/* Header */}
-          <header className="bg-white shadow-sm border-b">
-            <div className="flex items-center justify-between px-4 py-4 lg:px-8">
-              <div className="flex items-center gap-4">
-                {/* Mobile Menu Button - Only visible on small screens */}
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                >
-                  <Menu className="w-5 h-5" />
-                </button>
-                
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Branch Management</h1>
-                  <p className="text-sm text-gray-600">Manage all your locations</p>
-                  {loading && branches.length > 0 && (
-                    <div className="flex items-center mt-1">
-                      <Loader2 className="w-3 h-3 animate-spin mr-1 text-gray-400" />
-                      <span className="text-xs text-gray-500">Syncing...</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+      {/* Main Content Area */}
+      <div className={cn(
+        "flex-1 flex flex-col transition-all duration-300 ease-in-out",
+        sidebarOpen ? "lg:ml-64" : "lg:ml-0"
+      )}>
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b">
+          <div className="flex items-center justify-between px-4 py-4 lg:px-8">
+            <div className="flex items-center gap-4">
+              {/* Mobile Menu Button - Only visible on small screens */}
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
               
-              <div className="flex items-center gap-4">
-                <Button 
-                  onClick={() => handleAddDialogOpen(true)} 
-                  className="bg-blue-600 hover:bg-blue-700"
-                  disabled={loading}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Branch
-                </Button>
-                <span className="text-sm text-gray-600 hidden sm:block">Welcome, {user?.email}</span>
-                <Button variant="outline" onClick={handleLogout} className="hidden sm:flex">
-                  Logout
-                </Button>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Branch Management</h1>
+                <p className="text-sm text-gray-600">Manage all your locations</p>
+                {loading && branches.length > 0 && (
+                  <div className="flex items-center mt-1">
+                    <Loader2 className="w-3 h-3 animate-spin mr-1 text-gray-400" />
+                    <span className="text-xs text-gray-500">Syncing...</span>
+                  </div>
+                )}
               </div>
             </div>
-          </header>
+            
+            <div className="flex items-center gap-4">
+              <Button 
+                onClick={() => handleAddDialogOpen(true)} 
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={loading}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Branch
+              </Button>
+              <span className="text-sm text-gray-600 hidden sm:block">Welcome, {user?.email}</span>
+              <Button variant="outline" onClick={handleLogout} className="hidden sm:flex">
+                Logout
+              </Button>
+            </div>
+          </div>
+        </header>
 
-          {/* Content */}
-          <div className="flex-1 overflow-auto">
-            <div className="p-4 lg:p-8">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Branches</CardTitle>
-                    <Building className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{branches.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {activeBranches.length} active locations
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Active Branches</CardTitle>
-                    <Check className="h-4 w-4 text-green-500" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-green-600">{activeBranches.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      Currently operational
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Inactive Branches</CardTitle>
-                    <EyeOff className="h-4 w-4 text-gray-400" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-gray-600">{inactiveBranches.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      Temporarily closed
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Last Added</CardTitle>
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {branches.length > 0 ? 
-                        new Date(branches[0].createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) 
-                        : 'N/A'}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Most recent branch
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Filters */}
-              <Card className="mb-6">
-                <CardContent className="pt-6">
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        <Input
-                          placeholder="Search branches by name, address, city, or manager..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          className="pl-10"
-                          disabled={loading}
-                        />
-                      </div>
-                    </div>
-                    <Select value={statusFilter} onValueChange={setStatusFilter} disabled={loading}>
-                      <SelectTrigger className="w-full sm:w-48">
-                        <SelectValue placeholder="Filter by status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Branches</SelectItem>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+        {/* Content */}
+        <div className="flex-1 overflow-auto">
+          <div className="p-4 lg:p-8">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Branches</CardTitle>
+                  <Building className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{branches.length}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {activeBranches.length} active locations
+                  </p>
                 </CardContent>
               </Card>
 
-              {/* Branches Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredBranches.map((branch) => (
-                  <Card key={branch.id} className="hover:shadow-lg transition-shadow">
-                    <div className="aspect-video bg-gray-200 rounded-t-lg overflow-hidden relative">
-                      {branch.image ? (
-                        <img
-                          src={branch.image}
-                          alt={branch.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            target.parentElement?.querySelector('.fallback')?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      <div className={`absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ${branch.image ? 'hidden fallback' : ''}`}>
-                        <Building className="w-12 h-12 text-white" />
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Active Branches</CardTitle>
+                  <Check className="h-4 w-4 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{activeBranches.length}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Currently operational
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Inactive Branches</CardTitle>
+                  <EyeOff className="h-4 w-4 text-gray-400" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-600">{inactiveBranches.length}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Temporarily closed
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Last Added</CardTitle>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {branches.length > 0 ? 
+                      new Date(branches[0].createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) 
+                      : 'N/A'}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Most recent branch
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Filters */}
+            <Card className="mb-6">
+              <CardContent className="pt-6">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input
+                        placeholder="Search branches by name, address, city, or manager..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10"
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter} disabled={loading}>
+                    <SelectTrigger className="w-full sm:w-48">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Branches</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Branches Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredBranches.map((branch) => (
+                <Card key={branch.id} className="hover:shadow-lg transition-shadow">
+                  <div className="aspect-video bg-gray-200 rounded-t-lg overflow-hidden relative">
+                    {branch.image ? (
+                      <img
+                        src={branch.image}
+                        alt={branch.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.parentElement?.querySelector('.fallback')?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center ${branch.image ? 'hidden fallback' : ''}`}>
+                      <Building className="w-12 h-12 text-white" />
+                    </div>
+                    <div className="absolute top-2 right-2 flex gap-2">
+                      <Badge className={getStatusColor(branch.status)}>
+                        {branch.status}
+                      </Badge>
+                    </div>
+                  </div>
+                  <CardHeader>
+                    <CardTitle className="text-lg text-primary">{branch.name}</CardTitle>
+                    <CardDescription className="flex items-center gap-1">
+                      <MapPin className="w-4 h-4" />
+                      {branch.address}, {branch.city}, {branch.country}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-gray-400" />
+                          <span>{branch.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-4 h-4 text-gray-400" />
+                          <span className="truncate">{branch.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-gray-400" />
+                          <span>Manager: {branch.managerName}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-gray-400" />
+                          <span>{branch.openingTime} - {branch.closingTime}</span>
+                        </div>
                       </div>
-                      <div className="absolute top-2 right-2 flex gap-2">
-                        <Badge className={getStatusColor(branch.status)}>
-                          {branch.status}
-                        </Badge>
+
+                      {branch.description && (
+                        <p className="text-sm text-gray-600 line-clamp-2">{branch.description}</p>
+                      )}
+
+                      <div className="flex gap-2 pt-4">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => openEditDialog(branch)}
+                          disabled={isDeleting === branch.id}
+                        >
+                          <Edit className="w-3 h-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => openDeleteDialog(branch)}
+                          disabled={isDeleting === branch.id}
+                        >
+                          <Trash2 className="w-3 h-3 mr-1" />
+                          Delete
+                        </Button>
                       </div>
                     </div>
-                    <CardHeader>
-                      <CardTitle className="text-lg text-primary">{branch.name}</CardTitle>
-                      <CardDescription className="flex items-center gap-1">
-                        <MapPin className="w-4 h-4" />
-                        {branch.address}, {branch.city}, {branch.country}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <div className="space-y-3 text-sm">
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4 text-gray-400" />
-                            <span>{branch.phone}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Mail className="w-4 h-4 text-gray-400" />
-                            <span className="truncate">{branch.email}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-gray-400" />
-                            <span>Manager: {branch.managerName}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-gray-400" />
-                            <span>{branch.openingTime} - {branch.closingTime}</span>
-                          </div>
-                        </div>
-
-                        {branch.description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">{branch.description}</p>
-                        )}
-
-                        <div className="flex gap-2 pt-4">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex-1"
-                            onClick={() => openEditDialog(branch)}
-                            disabled={isDeleting === branch.id}
-                          >
-                            <Edit className="w-3 h-3 mr-1" />
-                            Edit
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => openDeleteDialog(branch)}
-                            disabled={isDeleting === branch.id}
-                          >
-                            <Trash2 className="w-3 h-3 mr-1" />
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              {filteredBranches.length === 0 && (
-                <div className="text-center py-12">
-                  <Building className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No branches found</h3>
-                  <p className="text-gray-600 mb-4">
-                    {searchTerm || statusFilter !== 'all'
-                      ? 'Try adjusting your search or filter criteria'
-                      : 'Get started by adding your first branch'
-                    }
-                  </p>
-                  {!searchTerm && statusFilter === 'all' && (
-                    <Button onClick={() => handleAddDialogOpen(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Branch
-                    </Button>
-                  )}
-                </div>
-              )}
+                  </CardContent>
+                </Card>
+              ))}
             </div>
+
+            {filteredBranches.length === 0 && (
+              <div className="text-center py-12">
+                <Building className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No branches found</h3>
+                <p className="text-gray-600 mb-4">
+                  {searchTerm || statusFilter !== 'all'
+                    ? 'Try adjusting your search or filter criteria'
+                    : 'Get started by adding your first branch'
+                  }
+                </p>
+                {!searchTerm && statusFilter === 'all' && (
+                  <Button onClick={() => handleAddDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Branch
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1308,6 +1304,6 @@ export default function SuperAdminBranches() {
           </div>
         </SheetContent>
       </Sheet>
-    </ProtectedRoute>
+    </div>
   );
 }

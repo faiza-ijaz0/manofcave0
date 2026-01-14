@@ -1,532 +1,538 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Users,
-  Star,
-  Clock,
-  Phone,
-  Mail,
-  Plus,
-  Edit,
-  Trash2,
-  Calendar,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  CalendarDays,
-  TrendingUp,
-  UserCheck,
-  UserX,
-  Timer,
-  Search,
-  Filter,
-  MoreHorizontal,
-  Eye,
-  UserPlus,
-  Upload,
-  ArrowLeft,
-  ArrowRight,
-  X
+import { 
+  Users, Star, Clock, Phone, Mail, Plus, Edit, MoreVertical, 
+  Search, Filter, Building, Trash2, X, Loader2, Check,
+  TrendingUp, FileText, Upload, Eye, EyeOff, Calendar,
+  Globe, CreditCard, File, Flag, UserCheck, Shield, AlertCircle
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
 
-interface StaffMember {
-  id: number;
+// Firebase imports
+import { 
+  collection, 
+  doc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp,
+  Timestamp,
+  where 
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { Unsubscribe } from 'firebase/firestore';
+
+export interface Staff {
+  id: string;
   name: string;
   role: string;
+  branch: string;
   email: string;
   phone: string;
   rating: number;
   reviews: number;
-  specialties: string[];
   experience: string;
-  status: 'active' | 'inactive' | 'on-leave';
-  avatar: string;
-  schedule: Record<string, string>;
-  specialtyInput?: string; // For editing purposes
+  status: 'active' | 'inactive' | 'on_leave';
+  hireDate: string;
+  salary: number;
+  avatar?: string;
+  address: string;
+  description: string;
+  specialization: string[];
+  
+  // New fields
+  documentId?: string;
+  visaExpiry?: string;
+  nationality?: string;
+  emergencyContact?: string;
+  bloodGroup?: string;
+  dateOfBirth?: string;
+  maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed';
+  gender?: 'male' | 'female' | 'other';
+  
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
-export default function AdminStaff() {
+export default function SuperAdminStaff() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'staff' | 'attendance'>('overview');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'on-leave'>('all');
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [attendanceData, setAttendanceData] = useState<Record<string, Record<string, 'present' | 'absent' | 'late'>>>({});
 
-  // Staff sidebar state
-  const [staffSidebarOpen, setStaffSidebarOpen] = useState(false);
-  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedStaff, setEditedStaff] = useState<Partial<StaffMember>>({});
-  const [imageUploadType, setImageUploadType] = useState<'url' | 'file'>('url');
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [nationalityFilter, setNationalityFilter] = useState('all');
+  
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+
+  // Form states
+  const [formData, setFormData] = useState({
+    name: '',
+    role: '',
+    branch: user?.role === 'admin' ? user.branchName || '' : '',
+    email: '',
+    phone: '',
+    rating: 4.5,
+    reviews: 0,
+    experience: '',
+    status: 'active' as 'active' | 'inactive' | 'on_leave',
+    hireDate: new Date().toISOString().split('T')[0],
+    salary: 0,
+    avatar: '',
+    address: '',
+    description: '',
+    specialization: [] as string[],
+    
+    // New form fields
+    documentId: '',
+    visaExpiry: '',
+    nationality: '',
+    emergencyContact: '',
+    bloodGroup: '',
+    dateOfBirth: '',
+    maritalStatus: 'single' as 'single' | 'married' | 'divorced' | 'widowed',
+    gender: 'male' as 'male' | 'female' | 'other'
+  });
+
+  // Fetch branches for dropdown
+  const [branches, setBranches] = useState<{id: string, name: string}[]>([]);
+
+  // 🔥 Firebase se real-time staff fetch - BRANCH FILTER ADDED
+  useEffect(() => {
+    let unsubscribe: Unsubscribe | undefined;
+
+    const fetchStaff = async () => {
+      try {
+        setLoading(true);
+        const staffRef = collection(db, 'staff');
+        
+        // Create query based on user role
+        let q;
+        
+        if (user?.role === 'super_admin') {
+          // Super admin - sab staff dekhe
+          q = query(staffRef, orderBy('createdAt', 'desc'));
+          console.log('👑 Super Admin: All staff members');
+        } else {
+          // Default - all staff (client side filter lagayenge)
+          q = query(staffRef, orderBy('createdAt', 'desc'));
+        }
+        
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          const staffData: Staff[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            const createdAt = data.createdAt as Timestamp;
+            const updatedAt = data.updatedAt as Timestamp;
+            
+            staffData.push({
+              id: doc.id,
+              name: data.name || '',
+              role: data.role || '',
+              branch: data.branch || '',
+              email: data.email || '',
+              phone: data.phone || '',
+              rating: data.rating || 0,
+              reviews: data.reviews || 0,
+              experience: data.experience || '',
+              status: data.status || 'active',
+              hireDate: data.hireDate || new Date().toISOString().split('T')[0],
+              salary: data.salary || 0,
+              avatar: data.avatar || '',
+              address: data.address || '',
+              description: data.description || '',
+              specialization: data.specialization || [],
+              
+              // New fields
+              documentId: data.documentId || '',
+              visaExpiry: data.visaExpiry || '',
+              nationality: data.nationality || '',
+              emergencyContact: data.emergencyContact || '',
+              bloodGroup: data.bloodGroup || '',
+              dateOfBirth: data.dateOfBirth || '',
+              maritalStatus: data.maritalStatus || 'single',
+              gender: data.gender || 'male',
+              
+              createdAt: createdAt?.toDate() || new Date(),
+              updatedAt: updatedAt?.toDate()
+            });
+          });
+          
+          // BRANCH ADMIN FILTER - Client side filter
+          let filteredStaff = staffData;
+          
+          if (user?.role === 'admin' && user?.branchName) {
+            filteredStaff = staffData.filter(staffMember => 
+              staffMember.branch === user.branchName
+            );
+            console.log(`🏢 Branch Filter: ${staffData.length} → ${filteredStaff.length} staff members`);
+          }
+          
+          setStaff(filteredStaff);
+          setLoading(false);
+        }, (error) => {
+          console.error("Error fetching staff: ", error);
+          setLoading(false);
+        });
+
+      } catch (error) {
+        console.error("Error in fetchStaff: ", error);
+        setLoading(false);
+      }
+    };
+
+    const fetchBranches = async () => {
+      try {
+        const branchesRef = collection(db, 'branches');
+        
+        let q;
+        if (user?.role === 'super_admin') {
+          q = query(branchesRef, orderBy('name'));
+        } else if (user?.role === 'admin' && user?.branchId) {
+          // Branch admin - sirf apni branch ka data
+          q = query(
+            branchesRef, 
+            where('id', '==', user.branchId)
+          );
+        } else {
+          q = query(branchesRef, orderBy('name'));
+        }
+        
+        onSnapshot(q, (snapshot) => {
+          const branchesData: {id: string, name: string}[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            branchesData.push({
+              id: doc.id,
+              name: data.name || 'Unknown Branch'
+            });
+          });
+          setBranches(branchesData);
+        });
+      } catch (error) {
+        console.error("Error fetching branches: ", error);
+      }
+    };
+
+    if (user) {
+      fetchStaff();
+      fetchBranches();
+    }
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user]);
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      role: '',
+      branch: user?.role === 'admin' ? user.branchName || '' : '',
+      email: '',
+      phone: '',
+      rating: 4.5,
+      reviews: 0,
+      experience: '',
+      status: 'active',
+      hireDate: new Date().toISOString().split('T')[0],
+      salary: 0,
+      avatar: '',
+      address: '',
+      description: '',
+      specialization: [],
+      
+      // New fields reset
+      documentId: '',
+      visaExpiry: '',
+      nationality: '',
+      emergencyContact: '',
+      bloodGroup: '',
+      dateOfBirth: '',
+      maritalStatus: 'single',
+      gender: 'male'
+    });
+  };
+
+  // 🔥 Add Staff to Firebase
+  const handleAddStaff = async () => {
+    if (!formData.name.trim() || !formData.email.trim() || !formData.branch.trim()) {
+      alert('Please fill all required fields');
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      const staffRef = collection(db, 'staff');
+      const newStaffData = {
+        ...formData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      await addDoc(staffRef, newStaffData);
+      
+      setAddDialogOpen(false);
+      resetForm();
+      alert('Staff added successfully!');
+      
+    } catch (error) {
+      console.error("Error adding staff: ", error);
+      alert('Error adding staff. Please try again.');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  // 🔥 Edit Staff in Firebase
+  const handleEditStaff = async () => {
+    if (!selectedStaff || !formData.name.trim() || !formData.branch.trim()) {
+      alert('Please fill all required fields');
+      return;
+    }
+
+    setIsEditing(true);
+    try {
+      const staffDoc = doc(db, 'staff', selectedStaff.id);
+      await updateDoc(staffDoc, {
+        ...formData,
+        updatedAt: serverTimestamp()
+      });
+      
+      setEditDialogOpen(false);
+      setSelectedStaff(null);
+      resetForm();
+      alert('Staff updated successfully!');
+      
+    } catch (error) {
+      console.error("Error updating staff: ", error);
+      alert('Error updating staff. Please try again.');
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  // 🔥 Delete Staff from Firebase
+  const handleDeleteStaff = async () => {
+    if (!selectedStaff) return;
+
+    setIsDeleting(selectedStaff.id);
+    try {
+      const staffDoc = doc(db, 'staff', selectedStaff.id);
+      await deleteDoc(staffDoc);
+      
+      setDeleteDialogOpen(false);
+      setSelectedStaff(null);
+      alert('Staff deleted successfully!');
+    } catch (error) {
+      console.error("Error deleting staff: ", error);
+      alert('Error deleting staff. Please try again.');
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
+  const openEditDialog = (staff: Staff) => {
+    setSelectedStaff(staff);
+    setFormData({
+      name: staff.name,
+      role: staff.role,
+      branch: staff.branch,
+      email: staff.email,
+      phone: staff.phone,
+      rating: staff.rating,
+      reviews: staff.reviews,
+      experience: staff.experience,
+      status: staff.status,
+      hireDate: staff.hireDate,
+      salary: staff.salary,
+      avatar: staff.avatar || '',
+      address: staff.address,
+      description: staff.description,
+      specialization: staff.specialization,
+      
+      // New fields
+      documentId: staff.documentId || '',
+      visaExpiry: staff.visaExpiry || '',
+      nationality: staff.nationality || '',
+      emergencyContact: staff.emergencyContact || '',
+      bloodGroup: staff.bloodGroup || '',
+      dateOfBirth: staff.dateOfBirth || '',
+      maritalStatus: staff.maritalStatus || 'single',
+      gender: staff.gender || 'male'
+    });
+    setEditDialogOpen(true);
+  };
+
+  const openDeleteDialog = (staff: Staff) => {
+    setSelectedStaff(staff);
+    setDeleteDialogOpen(true);
+  };
+
+  const roles = [...new Set(staff.map(member => member.role))];
+  const nationalities = [...new Set(staff.map(member => member.nationality).filter(Boolean))] as string[];
+
+  const filteredStaff = staff.filter(member => {
+    const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         member.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (member.documentId && member.documentId.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesBranch = branchFilter === 'all' || member.branch === branchFilter;
+    const matchesRole = roleFilter === 'all' || member.role === roleFilter;
+    const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
+    const matchesNationality = nationalityFilter === 'all' || member.nationality === nationalityFilter;
+    return matchesSearch && matchesBranch && matchesRole && matchesStatus && matchesNationality;
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active": return "bg-green-100 text-green-800";
+      case "inactive": return "bg-gray-100 text-gray-800";
+      case "on_leave": return "bg-yellow-100 text-yellow-800";
+      default: return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getVisaStatus = (expiryDate: string | undefined) => {
+    if (!expiryDate) return 'not_set';
+    const expiry = new Date(expiryDate);
+    const today = new Date();
+    const diffTime = expiry.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return 'expired';
+    if (diffDays <= 30) return 'expiring_soon';
+    return 'valid';
+  };
 
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
 
-  // Mock staff data
-  const [staff, setStaff] = useState<StaffMember[]>([
-    {
-      id: 1,
-      name: "Mike Johnson",
-      role: "Master Barber",
-      email: "mike@manofcave.com",
-      phone: "(555) 123-4567",
-      rating: 4.9,
-      reviews: 247,
-      specialties: ["Fades", "Classic Cuts", "Beard Trimming"],
-      experience: "8 years",
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=500&auto=format&fit=crop",
-      schedule: {
-        monday: "9AM-7PM",
-        tuesday: "9AM-7PM",
-        wednesday: "9AM-7PM",
-        thursday: "9AM-7PM",
-        friday: "9AM-7PM",
-        saturday: "8AM-5PM",
-        sunday: "Closed"
-      }
-    },
-    {
-      id: 2,
-      name: "Sarah Chen",
-      role: "Senior Stylist",
-      email: "sarah@manofcave.com",
-      phone: "(555) 234-5678",
-      rating: 4.8,
-      reviews: 189,
-      specialties: ["Color", "Styling", "Hair Treatments"],
-      experience: "6 years",
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=500&auto=format&fit=crop",
-      schedule: {
-        monday: "10AM-6PM",
-        tuesday: "10AM-6PM",
-        wednesday: "10AM-6PM",
-        thursday: "10AM-6PM",
-        friday: "10AM-6PM",
-        saturday: "9AM-4PM",
-        sunday: "Closed"
-      }
-    },
-    {
-      id: 3,
-      name: "Alex Rodriguez",
-      role: "Barber",
-      email: "alex@manofcave.com",
-      phone: "(555) 345-6789",
-      rating: 4.7,
-      reviews: 156,
-      specialties: ["Beard Care", "Modern Cuts", "Hot Towel Shave"],
-      experience: "5 years",
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=500&auto=format&fit=crop",
-      schedule: {
-        monday: "9AM-7PM",
-        tuesday: "9AM-7PM",
-        wednesday: "9AM-7PM",
-        thursday: "9AM-7PM",
-        friday: "9AM-7PM",
-        saturday: "8AM-5PM",
-        sunday: "Closed"
-      }
-    },
-    {
-      id: 4,
-      name: "Emma Davis",
-      role: "Apprentice",
-      email: "emma@manofcave.com",
-      phone: "(555) 456-7890",
-      rating: 4.5,
-      reviews: 23,
-      specialties: ["Basic Cuts", "Shampoo"],
-      experience: "1 year",
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=500&auto=format&fit=crop",
-      schedule: {
-        monday: "10AM-4PM",
-        tuesday: "10AM-4PM",
-        wednesday: "10AM-4PM",
-        thursday: "10AM-4PM",
-        friday: "10AM-4PM",
-        saturday: "Closed",
-        sunday: "Closed"
-      }
-    }
-  ]);
+  // Calculate stats - BRANCH SPECIFIC
+  const branchStaff = user?.role === 'admin' && user?.branchName 
+    ? staff.filter(s => s.branch === user.branchName)
+    : staff;
 
-  const [newStaff, setNewStaff] = useState({
-    name: '',
-    role: '',
-    email: '',
-    phone: '',
-    experience: '',
-    specialties: [] as string[],
-    specialtyInput: '',
-    status: 'active' as 'active' | 'inactive' | 'on-leave',
-    avatar: '',
-    schedule: {
-      monday: '9AM-7PM',
-      tuesday: '9AM-7PM',
-      wednesday: '9AM-7PM',
-      thursday: '9AM-7PM',
-      friday: '9AM-7PM',
-      saturday: '8AM-5PM',
-      sunday: 'Closed'
-    }
+  const activeStaff = branchStaff.filter(s => s.status === 'active');
+  const inactiveStaff = branchStaff.filter(s => s.status === 'inactive');
+  const onLeaveStaff = branchStaff.filter(s => s.status === 'on_leave');
+
+  // Staff with expired/expiring visa
+  const visaExpiringSoon = branchStaff.filter(member => {
+    const status = getVisaStatus(member.visaExpiry);
+    return status === 'expiring_soon' || status === 'expired';
   });
 
-  // Add staff form state
-  const [addStaffImageUploadType, setAddStaffImageUploadType] = useState<'url' | 'file'>('url');
-  const [addStaffImageFile, setAddStaffImageFile] = useState<File | null>(null);
-  const [addStaffCurrentStep, setAddStaffCurrentStep] = useState(1);
-  const [addStaffFormErrors, setAddStaffFormErrors] = useState<Record<string, string>>({});
+  // Average rating and salary for branch
+  const avgRating = branchStaff.length > 0 
+    ? (branchStaff.reduce((acc, member) => acc + member.rating, 0) / branchStaff.length).toFixed(1)
+    : '0.0';
+  
+  const avgSalary = branchStaff.length > 0 
+    ? (branchStaff.reduce((acc, member) => acc + member.salary, 0) / branchStaff.length / 1000).toFixed(0)
+    : '0';
 
-  const filteredStaff = staff.filter(member => {
-    const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active": return "bg-green-100 text-green-800 border-green-200";
-      case "inactive": return "bg-gray-100 text-gray-800 border-gray-200";
-      case "on-leave": return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      default: return "bg-gray-100 text-gray-600 border-gray-200";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "active": return <CheckCircle className="w-3 h-3" />;
-      case "inactive": return <XCircle className="w-3 h-3" />;
-      case "on-leave": return <AlertTriangle className="w-3 h-3" />;
-      default: return null;
-    }
-  };
-
-  const markAttendance = (staffId: number, status: 'present' | 'absent' | 'late') => {
-    setAttendanceData(prev => ({
-      ...prev,
-      [selectedDate]: {
-        ...prev[selectedDate],
-        [staffId]: status
-      }
-    }));
-  };
-
-  const getAttendanceStatus = (staffId: number) => {
-    return attendanceData[selectedDate]?.[staffId] || null;
-  };
-
-  const getAttendanceStats = () => {
-    const todayData = attendanceData[selectedDate] || {};
-    const present = Object.values(todayData).filter(status => status === 'present').length;
-    const absent = Object.values(todayData).filter(status => status === 'absent').length;
-    const late = Object.values(todayData).filter(status => status === 'late').length;
-    const total = staff.length;
-
-    return { present, absent, late, total };
-  };
-
-  const getAttendanceColor = (status: string | null) => {
-    switch (status) {
-      case 'present': return 'bg-green-100 text-green-800 border-green-200';
-      case 'absent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'late': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default: return 'bg-gray-100 text-gray-600 border-gray-200';
-    }
-  };
-
-  const getAttendanceIcon = (status: string | null) => {
-    switch (status) {
-      case 'present': return <CheckCircle className="w-3 h-3" />;
-      case 'absent': return <XCircle className="w-3 h-3" />;
-      case 'late': return <AlertTriangle className="w-3 h-3" />;
-      default: return null;
-    }
-  };
-
-  const addSpecialty = () => {
-    if (newStaff.specialtyInput.trim() && !newStaff.specialties.includes(newStaff.specialtyInput.trim())) {
-      setNewStaff(prev => ({
-        ...prev,
-        specialties: [...prev.specialties, prev.specialtyInput.trim()],
-        specialtyInput: ''
-      }));
-    }
-  };
-
-  const removeSpecialty = (specialty: string) => {
-    setNewStaff(prev => ({
-      ...prev,
-      specialties: prev.specialties.filter(s => s !== specialty)
-    }));
-  };
-
-  // Enhanced add staff functions
-  const validateAddStaffForm = () => {
-    const errors: Record<string, string> = {};
-
-    if (!newStaff.name.trim()) errors.name = 'Full name is required';
-    if (!newStaff.role) errors.role = 'Role is required';
-    if (!newStaff.email.trim()) errors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(newStaff.email)) errors.email = 'Email is invalid';
-    if (!newStaff.phone.trim()) errors.phone = 'Phone number is required';
-
-    setAddStaffFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleAddStaffEnhanced = () => {
-    if (!validateAddStaffForm()) {
-      setAddStaffCurrentStep(1); // Go back to first step if validation fails
-      return;
-    }
-
-    // Handle image upload
-    let avatarUrl = newStaff.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=500&auto=format&fit=crop';
-    if (addStaffImageUploadType === 'file' && addStaffImageFile) {
-      // In a real app, you'd upload the file to a server and get back a URL
-      // For now, we'll create a data URL
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        createNewStaffMember(dataUrl);
-      };
-      reader.readAsDataURL(addStaffImageFile);
-    } else {
-      createNewStaffMember(avatarUrl);
-    }
-  };
-
-  const createNewStaffMember = (avatarUrl: string) => {
-    const staffMember: StaffMember = {
-      id: staff.length + 1,
-      name: newStaff.name,
-      role: newStaff.role,
-      email: newStaff.email,
-      phone: newStaff.phone,
-      rating: 0,
-      reviews: 0,
-      specialties: newStaff.specialties,
-      experience: newStaff.experience,
-      status: newStaff.status,
-      avatar: avatarUrl,
-      schedule: newStaff.schedule
-    };
-
-    setStaff(prev => [...prev, staffMember]);
-
-    // Reset form
-    setNewStaff({
-      name: '',
-      role: '',
-      email: '',
-      phone: '',
-      experience: '',
-      specialties: [],
-      specialtyInput: '',
-      status: 'active',
-      avatar: '',
-      schedule: {
-        monday: '9AM-7PM',
-        tuesday: '9AM-7PM',
-        wednesday: '9AM-7PM',
-        thursday: '9AM-7PM',
-        friday: '9AM-7PM',
-        saturday: '8AM-5PM',
-        sunday: 'Closed'
-      }
-    });
-    setAddStaffImageFile(null);
-    setAddStaffImageUploadType('url');
-    setAddStaffCurrentStep(1);
-    setAddStaffFormErrors({});
-    setShowAddDialog(false);
-  };
-
-  const updateSchedule = (day: string, hours: string) => {
-    setNewStaff(prev => ({
-      ...prev,
-      schedule: {
-        ...prev.schedule,
-        [day]: hours
-      }
-    }));
-  };
-
-  const resetAddStaffForm = () => {
-    setNewStaff({
-      name: '',
-      role: '',
-      email: '',
-      phone: '',
-      experience: '',
-      specialties: [],
-      specialtyInput: '',
-      status: 'active',
-      avatar: '',
-      schedule: {
-        monday: '9AM-7PM',
-        tuesday: '9AM-7PM',
-        wednesday: '9AM-7PM',
-        thursday: '9AM-7PM',
-        friday: '9AM-7PM',
-        saturday: '8AM-5PM',
-        sunday: 'Closed'
-      }
-    });
-    setAddStaffImageFile(null);
-    setAddStaffImageUploadType('url');
-    setAddStaffCurrentStep(1);
-    setAddStaffFormErrors({});
-  };
-
-  // Staff sidebar functions
-  const openStaffSidebar = (staff: StaffMember, edit: boolean = false) => {
-    setSelectedStaff(staff);
-    setIsEditing(edit);
-    if (edit) {
-      setEditedStaff({
-        ...staff,
-        specialties: [...staff.specialties]
-      });
-    }
-    setStaffSidebarOpen(true);
-  };
-
-  const closeStaffSidebar = () => {
-    setStaffSidebarOpen(false);
-    setSelectedStaff(null);
-    setIsEditing(false);
-    setEditedStaff({});
-    setImageFile(null);
-    setImageUploadType('url');
-  };
-
-  const handleSaveStaff = () => {
-    if (!selectedStaff || !editedStaff.name || !editedStaff.role || !editedStaff.email || !editedStaff.phone) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    // Handle image upload
-    let avatarUrl = editedStaff.avatar;
-    if (imageUploadType === 'file' && imageFile) {
-      // In a real app, you'd upload the file to a server and get back a URL
-      // For now, we'll create a data URL
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        updateStaffWithAvatar(dataUrl);
-      };
-      reader.readAsDataURL(imageFile);
-    } else {
-      updateStaffWithAvatar(avatarUrl || selectedStaff.avatar);
-    }
-  };
-
-  const updateStaffWithAvatar = (avatarUrl: string) => {
-    const updatedStaff: StaffMember = {
-      ...selectedStaff!,
-      ...editedStaff,
-      avatar: avatarUrl,
-      specialties: editedStaff.specialties || []
-    };
-
-    setStaff(prev => prev.map(member =>
-      member.id === selectedStaff!.id ? updatedStaff : member
-    ));
-
-    closeStaffSidebar();
-  };
-
-  const handleDeleteStaff = () => {
-    if (!selectedStaff) return;
-
-    if (confirm(`Are you sure you want to remove ${selectedStaff.name}?`)) {
-      setStaff(prev => prev.filter(member => member.id !== selectedStaff.id));
-      closeStaffSidebar();
-    }
-  };
-
-  const addEditedSpecialty = () => {
-    if (editedStaff.specialtyInput?.trim() && !editedStaff.specialties?.includes(editedStaff.specialtyInput.trim())) {
-      setEditedStaff(prev => ({
-        ...prev,
-        specialties: [...(prev.specialties || []), prev.specialtyInput!.trim()],
-        specialtyInput: ''
-      }));
-    }
-  };
-
-  const removeEditedSpecialty = (specialty: string) => {
-    setEditedStaff(prev => ({
-      ...prev,
-      specialties: prev.specialties?.filter(s => s !== specialty) || []
-    }));
-  };
-
-  const stats = getAttendanceStats();
+  // Render loading state
+  if (loading && staff.length === 0) {
+    return (
+      <ProtectedRoute requiredRole="admin">
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-secondary" />
+            <p className="text-muted-foreground">Loading staff...</p>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
 
   return (
-    <ProtectedRoute requiredRole="branch_admin">
+    <ProtectedRoute requiredRole="admin">
       <div className="flex h-screen bg-gray-50">
-        {/* Sidebar */}
-        <AdminSidebar
-          role="branch_admin"
+        {/* Desktop Sidebar */}
+        <div className="hidden lg:block">
+          <AdminSidebar role="branch_admin" onLogout={handleLogout} />
+        </div>
+
+        {/* Mobile Sidebar Sheet */}
+        <AdminMobileSidebar 
+          role="branch_admin" 
           onLogout={handleLogout}
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
         />
 
-        {/* Main Content */}
+        {/* Main Content Area */}
         <div className={cn(
           "flex-1 flex flex-col transition-all duration-300 ease-in-out",
-          sidebarOpen ? "lg:ml-0" : "lg:ml-0"
+          sidebarOpen ? "lg:ml-64" : "lg:ml-0"
         )}>
           {/* Header */}
           <header className="bg-white shadow-sm border-b">
-            <div className="flex items-center justify-between px-6 py-4">
+            <div className="flex items-center justify-between px-4 py-4 lg:px-8">
               <div className="flex items-center gap-4">
-                <AdminMobileSidebar
-                  role="branch_admin"
-                  onLogout={handleLogout}
-                  isOpen={sidebarOpen}
-                  onToggle={() => setSidebarOpen(!sidebarOpen)}
-                />
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">Staff Management</h1>
-                  <p className="text-sm text-gray-600">Manage your team members and track attendance</p>
+                  <p className="text-sm text-gray-600">
+                    {user?.role === 'super_admin' 
+                      ? "Manage staff across all branches" 
+                      : `Managing staff for ${user?.branchName || 'your branch'}`
+                    }
+                  </p>
+                  {user?.role === 'admin' && user?.branchName && (
+                    <p className="text-xs text-green-600 font-medium mt-1">
+                      🏢 Branch: {user.branchName}
+                    </p>
+                  )}
+                  {loading && staff.length > 0 && (
+                    <div className="flex items-center mt-1">
+                      <Loader2 className="w-3 h-3 animate-spin mr-1 text-gray-400" />
+                      <span className="text-xs text-gray-500">Syncing...</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-4">
+                <Button 
+                  onClick={() => setAddDialogOpen(true)} 
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={loading}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Staff
+                </Button>
                 <span className="text-sm text-gray-600 hidden sm:block">Welcome, {user?.email}</span>
                 <Button variant="outline" onClick={handleLogout} className="hidden sm:flex">
                   Logout
@@ -537,1300 +543,1430 @@ export default function AdminStaff() {
 
           {/* Content */}
           <div className="flex-1 overflow-auto">
-            <div className="p-6">
-              <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="space-y-6">
-                {/* Tab Navigation */}
-                <div className="flex items-center justify-between">
-                  <TabsList className="grid w-fit grid-cols-3">
-                    <TabsTrigger value="overview" className="flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4" />
-                      Overview
-                    </TabsTrigger>
-                    <TabsTrigger value="staff" className="flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      Staff
-                    </TabsTrigger>
-                    <TabsTrigger value="attendance" className="flex items-center gap-2">
-                      <CalendarDays className="w-4 h-4" />
-                      Attendance
-                    </TabsTrigger>
-                  </TabsList>
+            <div className="p-4 lg:p-8">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Staff</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{branchStaff.length}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {activeStaff.length} active • {onLeaveStaff.length} on leave
+                    </p>
+                  </CardContent>
+                </Card>
 
-                  <Sheet open={showAddDialog} onOpenChange={(open) => {
-                    if (!open) resetAddStaffForm();
-                    setShowAddDialog(open);
-                  }}>
-                    <SheetTrigger asChild>
-                      <Button className="bg-primary hover:bg-primary/90">
-                        <UserPlus className="w-4 h-4 mr-2" />
-                        Add Staff
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent className="w-full sm:max-w-5xl max-h-screen overflow-hidden flex flex-col bg-white border-l-2 border-gray-200 shadow-2xl">
-                      {/* Header with better spacing */}
-                      <div className="shrink-0 px-6 py-6 border-b border-gray-100 bg-linear-to-r from-gray-50 to-white">
-                        <SheetHeader className="space-y-3">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                              <UserPlus className="w-6 h-6 text-primary" />
-                            </div>
-                            <div>
-                              <SheetTitle className="text-2xl font-bold text-gray-900">Add New Staff Member</SheetTitle>
-                              <SheetDescription className="text-gray-600 mt-1">
-                                Complete the form below to add a new team member to your staff.
-                              </SheetDescription>
-                            </div>
-                          </div>
-                        </SheetHeader>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Visa Status</CardTitle>
+                    <CreditCard className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{visaExpiringSoon.length}</div>
+                    <p className="text-xs text-muted-foreground">
+                      Expiring/Expired visas
+                    </p>
+                  </CardContent>
+                </Card>
 
-                        {/* Enhanced Progress Indicator */}
-                        <div className="mt-6 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-gray-700">Step {addStaffCurrentStep} of 3</span>
-                            <span className="text-sm text-gray-500 font-medium">
-                              {addStaffCurrentStep === 1 ? 'Basic Information' :
-                               addStaffCurrentStep === 2 ? 'Professional Details' : 'Schedule & Finalize'}
-                            </span>
-                          </div>
-                          <div className="relative">
-                            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                              <div
-                                className="bg-linear-to-r from-primary to-primary/80 h-3 rounded-full transition-all duration-500 ease-out shadow-sm"
-                                style={{ width: `${(addStaffCurrentStep / 3) * 100}%` }}
-                              ></div>
-                            </div>
-                            <div className="flex justify-between mt-2">
-                              {[1, 2, 3].map((step) => (
-                                <div key={step} className="flex flex-col items-center">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
-                                    step <= addStaffCurrentStep
-                                      ? 'bg-primary text-white shadow-md'
-                                      : 'bg-gray-200 text-gray-400'
-                                  }`}>
-                                    {step}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Avg Rating</CardTitle>
+                    <Star className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {avgRating}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Team performance
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Avg Salary</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      ${avgSalary}k
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Annual salary
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Filters */}
+              <Card className="mb-6">
+                <CardContent className="pt-6">
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex-1">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <Input
+                          placeholder="Search by name, email, role, or ID..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10"
+                          disabled={loading}
+                        />
                       </div>
-
-                      {/* Scrollable Content Area */}
-                      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
-                        {/* Step 1: Basic Information */}
-                        {addStaffCurrentStep === 1 && (
-                          <div className="space-y-8 animate-in slide-in-from-right-5 duration-300">
-                            <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
-                              <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shadow-lg">
-                                1
-                              </div>
-                              <div>
-                                <h3 className="text-xl font-bold text-gray-900">Basic Information</h3>
-                                <p className="text-sm text-gray-600">Enter the essential details for the new staff member</p>
-                              </div>
-                            </div>
-
-                            {/* Enhanced Profile Image Section */}
-                            <Card className="border-2 border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-200">
-                              <CardHeader className="pb-6 bg-linear-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                                    <UserPlus className="w-4 h-4 text-blue-600" />
-                                  </div>
-                                  <div>
-                                    <CardTitle className="text-lg text-gray-900">Profile Picture</CardTitle>
-                                    <CardDescription className="text-gray-600">Upload a profile image or provide an image URL</CardDescription>
-                                  </div>
-                                </div>
-                              </CardHeader>
-                              <CardContent className="p-6">
-                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-                                  <div className="shrink-0">
-                                    <Avatar className="w-24 h-24 ring-4 ring-gray-100 shadow-lg">
-                                      <AvatarImage
-                                        src={addStaffImageUploadType === 'file' && addStaffImageFile
-                                          ? URL.createObjectURL(addStaffImageFile)
-                                          : newStaff.avatar || undefined}
-                                        alt="Preview"
-                                        className="object-cover"
-                                      />
-                                      <AvatarFallback className="text-xl font-bold bg-gradient-to-br from-gray-100 to-gray-200">
-                                        {newStaff.name ? newStaff.name.split(' ').map(n => n[0]).join('') : 'NS'}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                  </div>
-                                  <div className="flex-1 space-y-4 w-full">
-                                    <div className="flex flex-wrap gap-3">
-                                      <Button
-                                        type="button"
-                                        variant={addStaffImageUploadType === 'url' ? 'default' : 'outline'}
-                                        size="sm"
-                                        onClick={() => setAddStaffImageUploadType('url')}
-                                        className="flex-1 sm:flex-none"
-                                      >
-                                        <Mail className="w-4 h-4 mr-2" />
-                                        URL
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant={addStaffImageUploadType === 'file' ? 'default' : 'outline'}
-                                        size="sm"
-                                        onClick={() => setAddStaffImageUploadType('file')}
-                                        className="flex-1 sm:flex-none"
-                                      >
-                                        <Upload className="w-4 h-4 mr-2" />
-                                        Upload File
-                                      </Button>
-                                    </div>
-
-                                    {addStaffImageUploadType === 'url' ? (
-                                      <div className="space-y-2">
-                                        <Label htmlFor="image-url" className="text-sm font-medium">Image URL</Label>
-                                        <Input
-                                          id="image-url"
-                                          placeholder="https://example.com/image.jpg"
-                                          value={newStaff.avatar}
-                                          onChange={(e) => setNewStaff({...newStaff, avatar: e.target.value})}
-                                          className="border-2 focus:border-primary"
-                                        />
-                                      </div>
-                                    ) : (
-                                      <div className="space-y-3">
-                                        <Label htmlFor="image-file" className="text-sm font-medium">Select Image File</Label>
-                                        <Input
-                                          id="image-file"
-                                          type="file"
-                                          accept="image/*"
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                              setAddStaffImageFile(file);
-                                            }
-                                          }}
-                                          className="border-2 focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-white hover:file:bg-primary/90"
-                                        />
-                                        {addStaffImageFile && (
-                                          <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                                            <CheckCircle className="w-4 h-4 text-green-600" />
-                                            <p className="text-sm text-green-700 font-medium">
-                                              Selected: {addStaffImageFile.name} ({(addStaffImageFile.size / 1024).toFixed(1)} KB)
-                                            </p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-
-                            {/* Enhanced Basic Info Fields */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                              <div className="space-y-3">
-                                <Label htmlFor="add-name" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                                  <UserPlus className="w-4 h-4" />
-                                  Full Name *
-                                  {addStaffFormErrors.name && <span className="text-red-500 text-xs font-normal">({addStaffFormErrors.name})</span>}
-                                </Label>
-                                <Input
-                                  id="add-name"
-                                  placeholder="Enter full name"
-                                  value={newStaff.name}
-                                  onChange={(e) => setNewStaff({...newStaff, name: e.target.value})}
-                                  className={`h-12 border-2 transition-all duration-200 ${
-                                    addStaffFormErrors.name
-                                      ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
-                                      : 'border-gray-200 focus:border-primary focus:ring-primary/20'
-                                  }`}
-                                />
-                              </div>
-                              <div className="space-y-3">
-                                <Label htmlFor="add-role" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                                  <Star className="w-4 h-4" />
-                                  Role *
-                                  {addStaffFormErrors.role && <span className="text-red-500 text-xs font-normal">({addStaffFormErrors.role})</span>}
-                                </Label>
-                                <Select value={newStaff.role} onValueChange={(value) => setNewStaff({...newStaff, role: value})}>
-                                  <SelectTrigger className={`h-12 border-2 ${
-                                    addStaffFormErrors.role
-                                      ? 'border-red-300 focus:border-red-500'
-                                      : 'border-gray-200 focus:border-primary'
-                                  }`}>
-                                    <SelectValue placeholder="Select role" />
-                                  </SelectTrigger>
-                                  <SelectContent className="border-2">
-                                    <SelectItem value="Master Barber">Master Barber</SelectItem>
-                                    <SelectItem value="Senior Stylist">Senior Stylist</SelectItem>
-                                    <SelectItem value="Barber">Barber</SelectItem>
-                                    <SelectItem value="Stylist">Stylist</SelectItem>
-                                    <SelectItem value="Apprentice">Apprentice</SelectItem>
-                                    <SelectItem value="Receptionist">Receptionist</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="space-y-3">
-                                <Label htmlFor="add-email" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                                  <Mail className="w-4 h-4" />
-                                  Email Address *
-                                  {addStaffFormErrors.email && <span className="text-red-500 text-xs font-normal">({addStaffFormErrors.email})</span>}
-                                </Label>
-                                <Input
-                                  id="add-email"
-                                  type="email"
-                                  placeholder="staff@manofcave.com"
-                                  value={newStaff.email}
-                                  onChange={(e) => setNewStaff({...newStaff, email: e.target.value})}
-                                  className={`h-12 border-2 transition-all duration-200 ${
-                                    addStaffFormErrors.email
-                                      ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
-                                      : 'border-gray-200 focus:border-primary focus:ring-primary/20'
-                                  }`}
-                                />
-                              </div>
-                              <div className="space-y-3">
-                                <Label htmlFor="add-phone" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                                  <Phone className="w-4 h-4" />
-                                  Phone Number *
-                                  {addStaffFormErrors.phone && <span className="text-red-500 text-xs font-normal">({addStaffFormErrors.phone})</span>}
-                                </Label>
-                                <Input
-                                  id="add-phone"
-                                  placeholder="(555) 123-4567"
-                                  value={newStaff.phone}
-                                  onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})}
-                                  className={`h-12 border-2 transition-all duration-200 ${
-                                    addStaffFormErrors.phone
-                                      ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
-                                      : 'border-gray-200 focus:border-primary focus:ring-primary/20'
-                                  }`}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Step 2: Professional Details */}
-                        {addStaffCurrentStep === 2 && (
-                          <div className="space-y-8 animate-in slide-in-from-right-5 duration-300">
-                            <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
-                              <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shadow-lg">
-                                2
-                              </div>
-                              <div>
-                                <h3 className="text-xl font-bold text-gray-900">Professional Details</h3>
-                                <p className="text-sm text-gray-600">Add professional experience and specialties</p>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                              <div className="space-y-6">
-                                <Card className="border-2 border-gray-100 shadow-sm">
-                                  <CardHeader className="pb-4">
-                                    <CardTitle className="text-lg flex items-center gap-2">
-                                      <Clock className="w-5 h-5 text-blue-600" />
-                                      Experience
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-4">
-                                    <div className="space-y-3">
-                                      <Label htmlFor="add-experience" className="text-sm font-semibold text-gray-700">Years of Experience</Label>
-                                      <Input
-                                        id="add-experience"
-                                        placeholder="e.g., 5 years"
-                                        value={newStaff.experience}
-                                        onChange={(e) => setNewStaff({...newStaff, experience: e.target.value})}
-                                        className="h-12 border-2 border-gray-200 focus:border-primary focus:ring-primary/20"
-                                      />
-                                    </div>
-
-                                    <div className="space-y-3">
-                                      <Label htmlFor="add-status" className="text-sm font-semibold text-gray-700">Initial Status</Label>
-                                      <Select value={newStaff.status} onValueChange={(value: 'active' | 'inactive' | 'on-leave') => setNewStaff({...newStaff, status: value})}>
-                                        <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-primary">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="border-2">
-                                          <SelectItem value="active">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                              Active
-                                            </div>
-                                          </SelectItem>
-                                          <SelectItem value="inactive">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-2 h-2 rounded-full bg-gray-500"></div>
-                                              Inactive
-                                            </div>
-                                          </SelectItem>
-                                          <SelectItem value="on-leave">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                                              On Leave
-                                            </div>
-                                          </SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              </div>
-
-                              <div className="space-y-6">
-                                <Card className="border-2 border-gray-100 shadow-sm">
-                                  <CardHeader className="pb-4">
-                                    <CardTitle className="text-lg flex items-center gap-2">
-                                      <Star className="w-5 h-5 text-purple-600" />
-                                      Specialties
-                                    </CardTitle>
-                                    <CardDescription>Add the services this staff member specializes in</CardDescription>
-                                  </CardHeader>
-                                  <CardContent className="space-y-4">
-                                    <div className="flex gap-3">
-                                      <Input
-                                        placeholder="Add a specialty (e.g., Fades, Haircuts)"
-                                        value={newStaff.specialtyInput}
-                                        onChange={(e) => setNewStaff({...newStaff, specialtyInput: e.target.value})}
-                                        onKeyPress={(e) => e.key === 'Enter' && addSpecialty()}
-                                        className="flex-1 h-12 border-2 border-gray-200 focus:border-primary focus:ring-primary/20"
-                                      />
-                                      <Button
-                                        type="button"
-                                        onClick={addSpecialty}
-                                        variant="outline"
-                                        size="lg"
-                                        className="px-6 border-2 hover:bg-primary hover:text-white hover:border-primary"
-                                      >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add
-                                      </Button>
-                                    </div>
-                                    {newStaff.specialties.length > 0 && (
-                                      <div className="space-y-3">
-                                        <Label className="text-sm font-semibold text-gray-700">Added Specialties:</Label>
-                                        <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-3 bg-gray-50 rounded-lg border-2 border-gray-100">
-                                          {newStaff.specialties.map((specialty, index) => (
-                                            <Badge
-                                              key={index}
-                                              variant="secondary"
-                                              className="cursor-pointer hover:bg-red-100 hover:text-red-700 px-3 py-1 text-sm font-medium transition-colors duration-200 border border-gray-200"
-                                              onClick={() => removeSpecialty(specialty)}
-                                            >
-                                              {specialty} ×
-                                            </Badge>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </CardContent>
-                                </Card>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Step 3: Schedule & Finalize */}
-                        {addStaffCurrentStep === 3 && (
-                          <div className="space-y-8 animate-in slide-in-from-right-5 duration-300">
-                            <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
-                              <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shadow-lg">
-                                3
-                              </div>
-                              <div>
-                                <h3 className="text-xl font-bold text-gray-900">Schedule & Finalize</h3>
-                                <p className="text-sm text-gray-600">Set working hours and review all information</p>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                              <Card className="border-2 border-gray-100 shadow-sm">
-                                <CardHeader className="pb-6 bg-linear-to-r from-green-50 to-emerald-50 border-b border-green-100">
-                                  <CardTitle className="text-lg flex items-center gap-2">
-                                    <Calendar className="w-5 h-5 text-green-600" />
-                                    Weekly Schedule
-                                  </CardTitle>
-                                  <CardDescription>Set the working hours for each day of the week</CardDescription>
-                                </CardHeader>
-                                <CardContent className="p-6 space-y-4">
-                                  {Object.entries(newStaff.schedule).map(([day, hours]) => (
-                                    <div key={day} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors duration-200">
-                                      <Label className="w-24 capitalize text-sm font-semibold text-gray-700 shrink-0">{day}:</Label>
-                                      <Input
-                                        value={hours}
-                                        onChange={(e) => updateSchedule(day, e.target.value)}
-                                        placeholder="e.g., 9AM-7PM or Closed"
-                                        className="flex-1 h-10 border-2 border-gray-200 focus:border-primary focus:ring-primary/20"
-                                      />
-                                    </div>
-                                  ))}
-                                </CardContent>
-                              </Card>
-
-                              <Card className="border-2 border-gray-100 shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50">
-                                <CardHeader className="pb-6">
-                                  <CardTitle className="text-lg flex items-center gap-2">
-                                    <Eye className="w-5 h-5 text-blue-600" />
-                                    Review Information
-                                  </CardTitle>
-                                  <CardDescription>Please review all entered information before adding the staff member</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                  <div className="grid grid-cols-1 gap-3 text-sm">
-                                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200">
-                                      <span className="font-semibold text-gray-600">Name:</span>
-                                      <span className="font-medium text-gray-900">{newStaff.name || 'Not provided'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200">
-                                      <span className="font-semibold text-gray-600">Role:</span>
-                                      <span className="font-medium text-gray-900">{newStaff.role || 'Not selected'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200">
-                                      <span className="font-semibold text-gray-600">Email:</span>
-                                      <span className="font-medium text-gray-900">{newStaff.email || 'Not provided'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200">
-                                      <span className="font-semibold text-gray-600">Phone:</span>
-                                      <span className="font-medium text-gray-900">{newStaff.phone || 'Not provided'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200">
-                                      <span className="font-semibold text-gray-600">Experience:</span>
-                                      <span className="font-medium text-gray-900">{newStaff.experience || 'Not provided'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200">
-                                      <span className="font-semibold text-gray-600">Status:</span>
-                                      <Badge className={`capitalize ${getStatusColor(newStaff.status)}`}>
-                                        {getStatusIcon(newStaff.status)}
-                                        <span className="ml-1">{newStaff.status}</span>
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                  {newStaff.specialties.length > 0 && (
-                                    <div className="p-4 bg-white rounded-lg border-2 border-gray-200">
-                                      <span className="font-semibold text-gray-600 block mb-2">Specialties:</span>
-                                      <div className="flex flex-wrap gap-2">
-                                        {newStaff.specialties.map((specialty, index) => (
-                                          <Badge key={index} variant="outline" className="border-gray-300">
-                                            {specialty}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </CardContent>
-                              </Card>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Enhanced Navigation Footer */}
-                      <div className="shrink-0 px-6 py-6 border-t-2 border-gray-100 bg-gray-50">
-                        <div className="flex justify-between items-center">
-                          <div className="flex gap-3">
-                            {addStaffCurrentStep > 1 && (
-                              <Button
-                                variant="outline"
-                                onClick={() => setAddStaffCurrentStep(prev => prev - 1)}
-                                className="px-6 py-3 border-2 hover:bg-gray-100 transition-colors duration-200"
-                              >
-                                <ArrowLeft className="w-4 h-4 mr-2" />
-                                Previous
-                              </Button>
-                            )}
-                          </div>
-
-                          <div className="flex gap-3">
-                            <Button
-                              variant="outline"
-                              onClick={() => setShowAddDialog(false)}
-                              className="px-6 py-3 border-2 hover:bg-gray-100 transition-colors duration-200"
-                            >
-                              <X className="w-4 h-4 mr-2" />
-                              Cancel
-                            </Button>
-                            {addStaffCurrentStep < 3 ? (
-                              <Button
-                                onClick={() => setAddStaffCurrentStep(prev => prev + 1)}
-                                className="px-6 py-3 bg-primary hover:bg-primary/90 text-white shadow-lg hover:shadow-xl transition-all duration-200"
-                              >
-                                Next
-                                <ArrowRight className="w-4 h-4 ml-2" />
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={handleAddStaffEnhanced}
-                                className="px-8 py-3 bg-linear-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white shadow-lg hover:shadow-xl transition-all duration-200 font-semibold"
-                              >
-                                <UserPlus className="w-5 h-5 mr-2" />
-                                Add Staff Member
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
-                </div>
-
-                {/* Overview Tab */}
-                <TabsContent value="overview" className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Staff</CardTitle>
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{staff.length}</div>
-                        <p className="text-xs text-muted-foreground">
-                          Active members
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Present Today</CardTitle>
-                        <UserCheck className="h-4 w-4 text-green-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-green-600">{stats.present}</div>
-                        <p className="text-xs text-muted-foreground">
-                          Out of {stats.total}
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Absent Today</CardTitle>
-                        <UserX className="h-4 w-4 text-red-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{stats.absent}</div>
-                        <p className="text-xs text-muted-foreground">
-                          Need attention
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Attendance Rate</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-blue-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0}%
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Today's rate
-                        </p>
-                      </CardContent>
-                    </Card>
+                    </div>
+                    <div className="grid grid-cols-2 md:flex gap-4">
+                      <Select value={branchFilter} onValueChange={setBranchFilter} disabled={loading}>
+                        <SelectTrigger className="w-full md:w-40">
+                          <SelectValue placeholder="Branch" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Branches</SelectItem>
+                          {user?.role === 'super_admin' ? (
+                            branches.map(branch => (
+                              <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
+                            ))
+                          ) : user?.branchName ? (
+                            <SelectItem value={user.branchName}>{user.branchName}</SelectItem>
+                          ) : (
+                            <SelectItem value="" disabled>No branch assigned</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Select value={roleFilter} onValueChange={setRoleFilter} disabled={loading}>
+                        <SelectTrigger className="w-full md:w-40">
+                          <SelectValue placeholder="Role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Roles</SelectItem>
+                          {roles.map(role => (
+                            <SelectItem key={role} value={role}>{role}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={statusFilter} onValueChange={setStatusFilter} disabled={loading}>
+                        <SelectTrigger className="w-full md:w-40">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="on_leave">On Leave</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={nationalityFilter} onValueChange={setNationalityFilter} disabled={loading}>
+                        <SelectTrigger className="w-full md:w-40">
+                          <SelectValue placeholder="Nationality" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Nationalities</SelectItem>
+                          {nationalities.filter(Boolean).map(nat => (
+                            <SelectItem key={nat} value={nat}>{nat}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+                </CardContent>
+              </Card>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Recent Activity</CardTitle>
-                      <CardDescription>Latest staff updates and attendance records</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-4 p-3 bg-green-50 rounded-lg">
-                          <CheckCircle className="w-5 h-5 text-green-600" />
-                          <div>
-                            <p className="font-medium">Mike Johnson marked present</p>
-                            <p className="text-sm text-gray-600">Today at 9:15 AM</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
-                          <UserPlus className="w-5 h-5 text-blue-600" />
-                          <div>
-                            <p className="font-medium">New staff member added</p>
-                            <p className="text-sm text-gray-600">Sarah Chen joined the team</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 p-3 bg-yellow-50 rounded-lg">
-                          <AlertTriangle className="w-5 h-5 text-yellow-600" />
-                          <div>
-                            <p className="font-medium">Alex Rodriguez running late</p>
-                            <p className="text-sm text-gray-600">Expected arrival: 9:30 AM</p>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-
-                {/* Staff Tab */}
-                <TabsContent value="staff" className="space-y-6">
-                  {/* Filters */}
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex flex-col sm:flex-row gap-4">
-                        <div className="flex-1">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                            <Input
-                              placeholder="Search staff members..."
-                              value={searchTerm}
-                              onChange={(e) => setSearchTerm(e.target.value)}
-                              className="pl-10"
-                            />
-                          </div>
-                        </div>
-                        <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
-                          <SelectTrigger className="w-full sm:w-48">
-                            <Filter className="w-4 h-4 mr-2" />
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Status</SelectItem>
-                            <SelectItem value="active">Active</SelectItem>
-                            <SelectItem value="inactive">Inactive</SelectItem>
-                            <SelectItem value="on-leave">On Leave</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Staff Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredStaff.map((member) => (
-                      <Card key={member.id} className="hover:shadow-lg transition-shadow">
-                        <CardHeader className="pb-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="w-12 h-12">
-                                <AvatarImage src={member.avatar} alt={member.name} />
-                                <AvatarFallback>
+              {/* Staff Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredStaff.map((member) => {
+                  const visaStatus = getVisaStatus(member.visaExpiry);
+                  return (
+                    <Card key={member.id} className="hover:shadow-lg transition-shadow">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-4">
+                            <div className="relative">
+                              {member.avatar ? (
+                                <img
+                                  src={member.avatar}
+                                  alt={member.name}
+                                  className="w-16 h-16 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-lg font-semibold">
                                   {member.name.split(' ').map(n => n[0]).join('')}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <CardTitle className="text-lg">{member.name}</CardTitle>
-                                <CardDescription>{member.role}</CardDescription>
+                                </div>
+                              )}
+                              <Badge className={`absolute -bottom-1 -right-1 ${getStatusColor(member.status)}`}>
+                                {member.status.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <CardTitle className="text-xl text-primary">{member.name}</CardTitle>
+                                {member.nationality && (
+                                  <Badge variant="outline" className="text-xs">
+                                    <Flag className="w-3 h-3 mr-1" />
+                                    {member.nationality}
+                                  </Badge>
+                                )}
+                              </div>
+                              <CardDescription className="text-secondary font-medium">{member.role}</CardDescription>
+                              <div className="flex items-center gap-2 mt-2">
+                                <Building className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm text-gray-600">{member.branch}</span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="flex items-center gap-1 text-sm">
+                                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                                  <span className="font-semibold">{member.rating}</span>
+                                  <span className="text-gray-500">({member.reviews} reviews)</span>
+                                </div>
                               </div>
                             </div>
+                          </div>
+                          <div className="flex items-center gap-2">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="sm">
-                                  <MoreHorizontal className="w-4 h-4" />
+                                  <MoreVertical className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openStaffSidebar(member, false)}>
-                                  <Eye className="w-4 h-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openStaffSidebar(member, true)}>
+                                <DropdownMenuItem onClick={() => openEditDialog(member)}>
                                   <Edit className="w-4 h-4 mr-2" />
-                                  Edit
+                                  Edit Profile
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
+                                <DropdownMenuItem>
+                                  <Calendar className="w-4 h-4 mr-2" />
+                                  Manage Schedule
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>
+                                  <File className="w-4 h-4 mr-2" />
+                                  View Documents
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
                                   className="text-red-600"
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to remove ${member.name}?`)) {
-                                      setStaff(prev => prev.filter(m => m.id !== member.id));
-                                    }
-                                  }}
+                                  onClick={() => openDeleteDialog(member)}
                                 >
                                   <Trash2 className="w-4 h-4 mr-2" />
-                                  Remove
+                                  Delete Staff
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-1">
-                              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                              <span className="font-medium">{member.rating}</span>
-                              <span className="text-gray-500">({member.reviews})</span>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {/* Basic Info */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <h4 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                                <Mail className="w-4 h-4" />
+                                Contact
+                              </h4>
+                              <div className="space-y-1 text-sm text-gray-600">
+                                <p>{member.email}</p>
+                                <p>{member.phone}</p>
+                                {member.emergencyContact && (
+                                  <p className="text-red-600">
+                                    Emergency: {member.emergencyContact}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            <Badge className={getStatusColor(member.status)}>
-                              {getStatusIcon(member.status)}
-                              <span className="ml-1 capitalize">{member.status}</span>
-                            </Badge>
+                            <div>
+                              <h4 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                                <File className="w-4 h-4" />
+                                Documents
+                              </h4>
+                              <div className="space-y-1 text-sm text-gray-600">
+                                {member.documentId && (
+                                  <p>ID: {member.documentId}</p>
+                                )}
+                                {member.visaExpiry && (
+                                  <div className="flex items-center gap-1">
+                                    <span>Visa:</span>
+                                    <Badge 
+                                      className={`
+                                        ${visaStatus === 'expired' ? 'bg-red-100 text-red-800' : ''}
+                                        ${visaStatus === 'expiring_soon' ? 'bg-yellow-100 text-yellow-800' : ''}
+                                        ${visaStatus === 'valid' ? 'bg-green-100 text-green-800' : ''}
+                                      `}
+                                    >
+                                      {new Date(member.visaExpiry).toLocaleDateString()}
+                                      {visaStatus === 'expired' && ' (Expired)'}
+                                      {visaStatus === 'expiring_soon' && ' (Expiring)'}
+                                    </Badge>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Mail className="w-4 h-4" />
-                              <span className="truncate">{member.email}</span>
+                          {/* Personal Details */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <h4 className="font-medium text-gray-900 mb-2">Personal Details</h4>
+                              <div className="space-y-1 text-sm text-gray-600">
+                                {member.dateOfBirth && (
+                                  <p>DOB: {new Date(member.dateOfBirth).toLocaleDateString()}</p>
+                                )}
+                                {member.gender && (
+                                  <p>Gender: {member.gender}</p>
+                                )}
+                                {member.bloodGroup && (
+                                  <p>Blood Group: {member.bloodGroup}</p>
+                                )}
+                                {member.maritalStatus && (
+                                  <p>Status: {member.maritalStatus}</p>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Phone className="w-4 h-4" />
-                              <span>{member.phone}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Clock className="w-4 h-4" />
-                              <span>{member.experience}</span>
+                            <div>
+                              <h4 className="font-medium text-gray-900 mb-2">Employment</h4>
+                              <div className="space-y-1 text-sm text-gray-600">
+                                <p>Experience: {member.experience}</p>
+                                <p>Salary: ${member.salary.toLocaleString()}/year</p>
+                                <p>Hired: {new Date(member.hireDate).toLocaleDateString()}</p>
+                              </div>
                             </div>
                           </div>
 
-                          {member.specialties.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {member.specialties.slice(0, 3).map((specialty, index) => (
-                                <Badge key={index} variant="outline" className="text-xs">
-                                  {specialty}
-                                </Badge>
-                              ))}
-                              {member.specialties.length > 3 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{member.specialties.length - 3}
-                                </Badge>
-                              )}
+                          {member.specialization && member.specialization.length > 0 && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 mb-2">Specialization</h4>
+                              <div className="flex flex-wrap gap-1">
+                                {member.specialization.map((skill, idx) => (
+                                  <Badge key={idx} variant="outline" className="text-xs">
+                                    {skill}
+                                  </Badge>
+                                ))}
+                              </div>
                             </div>
                           )}
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
 
-                  {filteredStaff.length === 0 && (
-                    <Card>
-                      <CardContent className="text-center py-12">
-                        <Users className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No staff members found</h3>
-                        <p className="text-gray-600 mb-4">
-                          {searchTerm || statusFilter !== 'all'
-                            ? 'Try adjusting your search or filters'
-                            : 'Get started by adding your first staff member'
-                          }
-                        </p>
-                        {!searchTerm && statusFilter === 'all' && (
-                          <Button onClick={() => setShowAddDialog(true)}>
-                            <UserPlus className="w-4 h-4 mr-2" />
-                            Add Staff Member
-                          </Button>
-                        )}
+                          <div className="flex gap-2 pt-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => openEditDialog(member)}
+                            >
+                              <Edit className="w-3 h-3 mr-1" />
+                              Edit
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => openDeleteDialog(member)}
+                              disabled={isDeleting === member.id}
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
+                  );
+                })}
+              </div>
+
+              {filteredStaff.length === 0 && (
+                <div className="text-center py-12">
+                  <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No staff found</h3>
+                  <p className="text-gray-600 mb-4">
+                    {searchTerm || branchFilter !== 'all' || roleFilter !== 'all'
+                      ? 'Try adjusting your search or filter criteria'
+                      : `No staff members found for ${user?.branchName || 'your branch'}`
+                    }
+                  </p>
+                  {!searchTerm && branchFilter === 'all' && roleFilter === 'all' && (
+                    <Button onClick={() => setAddDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Staff
+                    </Button>
                   )}
-                </TabsContent>
-
-                {/* Attendance Tab */}
-                <TabsContent value="attendance" className="space-y-6">
-                  {/* Date Controls */}
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                          <Label htmlFor="date-select" className="text-sm font-medium">Select Date:</Label>
-                          <Input
-                            id="date-select"
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="w-auto"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
-                          >
-                            Today
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const date = new Date(selectedDate);
-                              date.setDate(date.getDate() - 1);
-                              setSelectedDate(date.toISOString().split('T')[0]);
-                            }}
-                          >
-                            Previous Day
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const date = new Date(selectedDate);
-                              date.setDate(date.getDate() + 1);
-                              setSelectedDate(date.toISOString().split('T')[0]);
-                            }}
-                          >
-                            Next Day
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Attendance Stats */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Present</CardTitle>
-                        <UserCheck className="h-4 w-4 text-green-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-green-600">{stats.present}</div>
-                        <p className="text-xs text-muted-foreground">
-                          Marked present
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Absent</CardTitle>
-                        <UserX className="h-4 w-4 text-red-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{stats.absent}</div>
-                        <p className="text-xs text-muted-foreground">
-                          Not present
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Late</CardTitle>
-                        <Timer className="h-4 w-4 text-yellow-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-yellow-600">{stats.late}</div>
-                        <p className="text-xs text-muted-foreground">
-                          Arrived late
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Attendance Rate</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-blue-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0}%
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Overall rate
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Attendance Table */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <CalendarDays className="w-5 h-5" />
-                        Daily Attendance - {new Date(selectedDate).toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </CardTitle>
-                      <CardDescription>
-                        Mark attendance for each staff member. Changes are saved automatically.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        {staff.map((member) => {
-                          const attendanceStatus = getAttendanceStatus(member.id);
-                          return (
-                            <div key={member.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                              <div className="flex items-center gap-4">
-                                <Avatar className="w-12 h-12">
-                                  <AvatarImage src={member.avatar} alt={member.name} />
-                                  <AvatarFallback>
-                                    {member.name.split(' ').map(n => n[0]).join('')}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <h4 className="font-medium text-gray-900">{member.name}</h4>
-                                  <p className="text-sm text-gray-600">{member.role}</p>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                {attendanceStatus && (
-                                  <Badge className={getAttendanceColor(attendanceStatus)}>
-                                    {getAttendanceIcon(attendanceStatus)}
-                                    <span className="ml-1 capitalize">{attendanceStatus}</span>
-                                  </Badge>
-                                )}
-
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant={attendanceStatus === 'present' ? 'default' : 'outline'}
-                                    onClick={() => markAttendance(member.id, 'present')}
-                                    className="h-8 px-3"
-                                  >
-                                    <CheckCircle className="w-4 h-4 mr-1" />
-                                    Present
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant={attendanceStatus === 'late' ? 'default' : 'outline'}
-                                    onClick={() => markAttendance(member.id, 'late')}
-                                    className="h-8 px-3"
-                                  >
-                                    <AlertTriangle className="w-4 h-4 mr-1" />
-                                    Late
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant={attendanceStatus === 'absent' ? 'destructive' : 'outline'}
-                                    onClick={() => markAttendance(member.id, 'absent')}
-                                    className="h-8 px-3"
-                                  >
-                                    <XCircle className="w-4 h-4 mr-1" />
-                                    Absent
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {staff.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">
-                          <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                          <p>No staff members found. Add staff members first.</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Staff Details Sidebar */}
-        <Sheet open={staffSidebarOpen} onOpenChange={setStaffSidebarOpen}>
-          <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
-            <SheetHeader className="pb-6">
-              <SheetTitle className="flex items-center gap-3">
-                {isEditing ? (
-                  <>
-                    <Edit className="w-5 h-5" />
-                    Edit Staff Member
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-5 h-5" />
-                    Staff Details
-                  </>
-                )}
-              </SheetTitle>
-              <SheetDescription>
-                {isEditing
-                  ? "Update staff member information and settings."
-                  : "View detailed information about this staff member."
-                }
-              </SheetDescription>
-            </SheetHeader>
-
-            {selectedStaff && (
-              <div className="space-y-6">
-                {/* Profile Image Section */}
-                <div className="space-y-4">
-                  <Label className="text-base font-medium">Profile Image</Label>
-                  <div className="flex items-center gap-4">
-                    <Avatar className="w-20 h-20">
-                      <AvatarImage
-                        src={isEditing ? editedStaff.avatar || selectedStaff.avatar : selectedStaff.avatar}
-                        alt={selectedStaff.name}
-                      />
-                      <AvatarFallback className="text-lg">
-                        {selectedStaff.name.split(' ').map(n => n[0]).join('')}
-                      </AvatarFallback>
-                    </Avatar>
-                    {isEditing && (
-                      <div className="flex-1 space-y-3">
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant={imageUploadType === 'url' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setImageUploadType('url')}
-                          >
-                            URL
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={imageUploadType === 'file' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setImageUploadType('file')}
-                          >
-                            Upload File
-                          </Button>
-                        </div>
-
-                        {imageUploadType === 'url' ? (
-                          <Input
-                            placeholder="Enter image URL"
-                            value={editedStaff.avatar || ''}
-                            onChange={(e) => setEditedStaff({...editedStaff, avatar: e.target.value})}
-                          />
-                        ) : (
-                          <div className="space-y-2">
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  setImageFile(file);
-                                  // Preview the image
-                                  const reader = new FileReader();
-                                  reader.onload = (e) => {
-                                    setEditedStaff({...editedStaff, avatar: e.target?.result as string});
-                                  };
-                                  reader.readAsDataURL(file);
-                                }
-                              }}
-                            />
-                            {imageFile && (
-                              <p className="text-sm text-gray-600">
-                                Selected: {imageFile.name} ({(imageFile.size / 1024).toFixed(1)} KB)
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+      {/* Add Staff Sheet */}
+      <Sheet open={addDialogOpen} onOpenChange={(open) => {
+        if (!open) resetForm();
+        setAddDialogOpen(open);
+      }}>
+        <SheetContent className="sm:max-w-lg h-[700px] m-auto rounded-3xl p-4 w-full">
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="shrink-0 px-6 py-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <SheetHeader className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center shadow-sm">
+                    <Users className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <SheetTitle className="text-2xl font-bold text-gray-900">Add New Staff</SheetTitle>
+                    <SheetDescription className="text-gray-600 mt-1">
+                      {user?.role === 'admin' 
+                        ? `Add a new staff member to ${user?.branchName || 'your branch'}`
+                        : 'Add a new staff member with complete details.'
+                      }
+                    </SheetDescription>
                   </div>
                 </div>
+              </SheetHeader>
+            </div>
 
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="space-y-6">
                 {/* Basic Information */}
                 <div className="space-y-4">
-                  <Label className="text-base font-medium">Basic Information</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-name">Full Name *</Label>
-                      {isEditing ? (
-                        <Input
-                          id="edit-name"
-                          value={editedStaff.name || ''}
-                          onChange={(e) => setEditedStaff({...editedStaff, name: e.target.value})}
-                        />
-                      ) : (
-                        <p className="text-sm font-medium p-2 bg-gray-50 rounded-md">{selectedStaff.name}</p>
-                      )}
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <UserCheck className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Basic Information</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="name" className="text-sm font-medium text-gray-700">
+                        Full Name *
+                      </Label>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Enter full name"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-role">Role *</Label>
-                      {isEditing ? (
-                        <Select
-                          value={editedStaff.role || ''}
-                          onValueChange={(value) => setEditedStaff({...editedStaff, role: value})}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Master Barber">Master Barber</SelectItem>
-                            <SelectItem value="Senior Stylist">Senior Stylist</SelectItem>
-                            <SelectItem value="Barber">Barber</SelectItem>
-                            <SelectItem value="Stylist">Stylist</SelectItem>
-                            <SelectItem value="Apprentice">Apprentice</SelectItem>
-                            <SelectItem value="Receptionist">Receptionist</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <p className="text-sm font-medium p-2 bg-gray-50 rounded-md">{selectedStaff.role}</p>
-                      )}
+                    <div>
+                      <Label htmlFor="role" className="text-sm font-medium text-gray-700">
+                        Role *
+                      </Label>
+                      <Input
+                        id="role"
+                        value={formData.role}
+                        onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                        placeholder="e.g., Master Barber"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-email">Email *</Label>
-                      {isEditing ? (
-                        <Input
-                          id="edit-email"
-                          type="email"
-                          value={editedStaff.email || ''}
-                          onChange={(e) => setEditedStaff({...editedStaff, email: e.target.value})}
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
-                          <Mail className="w-4 h-4 text-gray-500" />
-                          <span className="text-sm">{selectedStaff.email}</span>
-                        </div>
-                      )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="gender" className="text-sm font-medium text-gray-700">
+                        Gender
+                      </Label>
+                      <Select
+                        value={formData.gender}
+                        onValueChange={(value: 'male' | 'female' | 'other') => 
+                          setFormData(prev => ({ ...prev, gender: value }))
+                        }
+                        disabled={isAdding}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select gender" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="male">Male</SelectItem>
+                          <SelectItem value="female">Female</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="edit-phone">Phone *</Label>
-                      {isEditing ? (
-                        <Input
-                          id="edit-phone"
-                          value={editedStaff.phone || ''}
-                          onChange={(e) => setEditedStaff({...editedStaff, phone: e.target.value})}
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
-                          <Phone className="w-4 h-4 text-gray-500" />
-                          <span className="text-sm">{selectedStaff.phone}</span>
-                        </div>
-                      )}
+                    <div>
+                      <Label htmlFor="dateOfBirth" className="text-sm font-medium text-gray-700">
+                        Date of Birth
+                      </Label>
+                      <Input
+                        id="dateOfBirth"
+                        type="date"
+                        value={formData.dateOfBirth}
+                        onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="edit-experience">Years of Experience</Label>
-                      {isEditing ? (
-                        <Input
-                          id="edit-experience"
-                          value={editedStaff.experience || ''}
-                          onChange={(e) => setEditedStaff({...editedStaff, experience: e.target.value})}
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
-                          <Clock className="w-4 h-4 text-gray-500" />
-                          <span className="text-sm">{selectedStaff.experience}</span>
-                        </div>
-                      )}
-                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="nationality" className="text-sm font-medium text-gray-700">
+                      Nationality
+                    </Label>
+                    <Input
+                      id="nationality"
+                      value={formData.nationality}
+                      onChange={(e) => setFormData(prev => ({ ...prev, nationality: e.target.value }))}
+                      placeholder="e.g., Pakistani, American"
+                      className="mt-1"
+                      disabled={isAdding}
+                    />
                   </div>
                 </div>
 
-                {/* Status */}
+                {/* Contact & Employment */}
                 <div className="space-y-4">
-                  <Label className="text-base font-medium">Status</Label>
-                  {isEditing ? (
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <Phone className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contact & Employment</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+                        Email Address *
+                      </Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="Enter email address"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="phone" className="text-sm font-medium text-gray-700">
+                        Phone Number *
+                      </Label>
+                      <Input
+                        id="phone"
+                        value={formData.phone}
+                        onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="Enter phone number"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="emergencyContact" className="text-sm font-medium text-gray-700">
+                      Emergency Contact
+                    </Label>
+                    <Input
+                      id="emergencyContact"
+                      value={formData.emergencyContact}
+                      onChange={(e) => setFormData(prev => ({ ...prev, emergencyContact: e.target.value }))}
+                      placeholder="Emergency contact number"
+                      className="mt-1"
+                      disabled={isAdding}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="branch" className="text-sm font-medium text-gray-700">
+                      Branch {user?.role === 'admin' ? '(Auto-selected)' : '*'}
+                    </Label>
                     <Select
-                      value={editedStaff.status || 'active'}
-                      onValueChange={(value: 'active' | 'inactive' | 'on-leave') =>
-                        setEditedStaff({...editedStaff, status: value})
-                      }
+                      value={formData.branch}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, branch: value }))}
+                      disabled={isAdding || user?.role === 'admin'}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select branch" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                        <SelectItem value="on-leave">On Leave</SelectItem>
+                        {user?.role === 'admin' ? (
+                          // Branch admin ke liye sirf uski branch
+                          <SelectItem value={user.branchName || ''}>
+                            {user.branchName || 'Your Branch'}
+                          </SelectItem>
+                        ) : (
+                          // Super admin ke liye sab branches
+                          <>
+                            {branches.map(branch => (
+                              <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
-                  ) : (
-                    <Badge className={getStatusColor(selectedStaff.status)}>
-                      {getStatusIcon(selectedStaff.status)}
-                      <span className="ml-1 capitalize">{selectedStaff.status}</span>
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Specialties */}
-                <div className="space-y-4">
-                  <Label className="text-base font-medium">Specialties</Label>
-                  {isEditing ? (
-                    <div className="space-y-3">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Add a specialty"
-                          value={editedStaff.specialtyInput || ''}
-                          onChange={(e) => setEditedStaff({...editedStaff, specialtyInput: e.target.value})}
-                          onKeyPress={(e) => e.key === 'Enter' && addEditedSpecialty()}
-                        />
-                        <Button type="button" onClick={addEditedSpecialty} variant="outline">
-                          Add
-                        </Button>
-                      </div>
-                      {editedStaff.specialties && editedStaff.specialties.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {editedStaff.specialties.map((specialty, index) => (
-                            <Badge key={index} variant="secondary" className="cursor-pointer" onClick={() => removeEditedSpecialty(specialty)}>
-                              {specialty} ×
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedStaff.specialties.length > 0 ? (
-                        selectedStaff.specialties.map((specialty, index) => (
-                          <Badge key={index} variant="outline">
-                            {specialty}
-                          </Badge>
-                        ))
-                      ) : (
-                        <p className="text-sm text-gray-500">No specialties listed</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Performance Metrics */}
-                <div className="space-y-4">
-                  <Label className="text-base font-medium">Performance Metrics</Label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-yellow-50 rounded-lg">
-                      <div className="flex items-center justify-center gap-1 mb-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-semibold text-yellow-700">{selectedStaff.rating}</span>
-                      </div>
-                      <p className="text-xs text-yellow-600">Average Rating</p>
-                    </div>
-                    <div className="text-center p-3 bg-blue-50 rounded-lg">
-                      <div className="font-semibold text-blue-700">{selectedStaff.reviews}</div>
-                      <p className="text-xs text-blue-600">Total Reviews</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Schedule */}
-                <div className="space-y-4">
-                  <Label className="text-base font-medium">Weekly Schedule</Label>
-                  <div className="space-y-2">
-                    {Object.entries(selectedStaff.schedule).map(([day, hours]) => (
-                      <div key={day} className="flex justify-between items-center py-2 px-3 bg-gray-50 rounded-md">
-                        <span className="font-medium capitalize text-sm">{day}</span>
-                        <span className="text-sm text-gray-600">{hours}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex justify-between gap-3 pt-6 border-t">
-                  <Button variant="outline" onClick={closeStaffSidebar}>
-                    Close
-                  </Button>
-                  <div className="flex gap-2">
-                    {isEditing ? (
-                      <>
-                        <Button variant="outline" onClick={() => setIsEditing(false)}>
-                          Cancel Edit
-                        </Button>
-                        <Button onClick={handleSaveStaff}>
-                          Save Changes
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button variant="outline" onClick={handleDeleteStaff} className="text-red-600 hover:text-red-700">
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Remove Staff
-                        </Button>
-                        <Button onClick={() => setIsEditing(true)}>
-                          <Edit className="w-4 h-4 mr-2" />
-                          Edit Details
-                        </Button>
-                      </>
+                    {user?.role === 'admin' && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        You can only add staff to your assigned branch: <strong>{user.branchName}</strong>
+                      </p>
                     )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="salary" className="text-sm font-medium text-gray-700">
+                        Salary *
+                      </Label>
+                      <Input
+                        id="salary"
+                        type="number"
+                        value={formData.salary}
+                        onChange={(e) => setFormData(prev => ({ ...prev, salary: parseInt(e.target.value) || 0 }))}
+                        placeholder="Enter annual salary"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="experience" className="text-sm font-medium text-gray-700">
+                        Experience *
+                      </Label>
+                      <Input
+                        id="experience"
+                        value={formData.experience}
+                        onChange={(e) => setFormData(prev => ({ ...prev, experience: e.target.value }))}
+                        placeholder="e.g., 5 years"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="hireDate" className="text-sm font-medium text-gray-700">
+                        Hire Date *
+                      </Label>
+                      <Input
+                        id="hireDate"
+                        type="date"
+                        value={formData.hireDate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, hireDate: e.target.value }))}
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="status" className="text-sm font-medium text-gray-700">
+                        Status
+                      </Label>
+                      <Select
+                        value={formData.status}
+                        onValueChange={(value: 'active' | 'inactive' | 'on_leave') =>
+                          setFormData(prev => ({ ...prev, status: value }))
+                        }
+                        disabled={isAdding}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="on_leave">On Leave</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="rating" className="text-sm font-medium text-gray-700">
+                        Initial Rating
+                      </Label>
+                      <Input
+                        id="rating"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="5"
+                        value={formData.rating}
+                        onChange={(e) => setFormData(prev => ({ ...prev, rating: parseFloat(e.target.value) || 0 }))}
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="reviews" className="text-sm font-medium text-gray-700">
+                        Initial Reviews
+                      </Label>
+                      <Input
+                        id="reviews"
+                        type="number"
+                        value={formData.reviews}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reviews: parseInt(e.target.value) || 0 }))}
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Document Details */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <File className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Document Details</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="documentId" className="text-sm font-medium text-gray-700">
+                        Document ID (CNIC/Passport)
+                      </Label>
+                      <Input
+                        id="documentId"
+                        value={formData.documentId}
+                        onChange={(e) => setFormData(prev => ({ ...prev, documentId: e.target.value }))}
+                        placeholder="Enter document number"
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="visaExpiry" className="text-sm font-medium text-gray-700">
+                        Visa Expiry Date
+                      </Label>
+                      <Input
+                        id="visaExpiry"
+                        type="date"
+                        value={formData.visaExpiry}
+                        onChange={(e) => setFormData(prev => ({ ...prev, visaExpiry: e.target.value }))}
+                        className="mt-1"
+                        disabled={isAdding}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="bloodGroup" className="text-sm font-medium text-gray-700">
+                        Blood Group
+                      </Label>
+                      <Select
+                        value={formData.bloodGroup}
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, bloodGroup: value }))}
+                        disabled={isAdding}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select blood group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="A+">A+</SelectItem>
+                          <SelectItem value="A-">A-</SelectItem>
+                          <SelectItem value="B+">B+</SelectItem>
+                          <SelectItem value="B-">B-</SelectItem>
+                          <SelectItem value="AB+">AB+</SelectItem>
+                          <SelectItem value="AB-">AB-</SelectItem>
+                          <SelectItem value="O+">O+</SelectItem>
+                          <SelectItem value="O-">O-</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="maritalStatus" className="text-sm font-medium text-gray-700">
+                        Marital Status
+                      </Label>
+                      <Select
+                        value={formData.maritalStatus}
+                        onValueChange={(value: 'single' | 'married' | 'divorced' | 'widowed') =>
+                          setFormData(prev => ({ ...prev, maritalStatus: value }))
+                        }
+                        disabled={isAdding}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="single">Single</SelectItem>
+                          <SelectItem value="married">Married</SelectItem>
+                          <SelectItem value="divorced">Divorced</SelectItem>
+                          <SelectItem value="widowed">Widowed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Information */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <Building className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Additional Information</h3>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="address" className="text-sm font-medium text-gray-700">
+                      Address
+                    </Label>
+                    <Textarea
+                      id="address"
+                      value={formData.address}
+                      onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                      placeholder="Enter address"
+                      rows={2}
+                      className="mt-1"
+                      disabled={isAdding}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="description" className="text-sm font-medium text-gray-700">
+                      Description
+                    </Label>
+                    <Textarea
+                      id="description"
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Enter description"
+                      rows={2}
+                      className="mt-1"
+                      disabled={isAdding}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="avatar" className="text-sm font-medium text-gray-700">
+                      Profile Image URL
+                    </Label>
+                    <Input
+                      id="avatar"
+                      value={formData.avatar}
+                      onChange={(e) => setFormData(prev => ({ ...prev, avatar: e.target.value }))}
+                      placeholder="Enter image URL (optional)"
+                      className="mt-1"
+                      disabled={isAdding}
+                    />
                   </div>
                 </div>
               </div>
-            )}
-          </SheetContent>
-        </Sheet>
-      </div>
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 px-6 py-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setAddDialogOpen(false)}
+                  className="w-full sm:w-auto"
+                  disabled={isAdding}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddStaff}
+                  disabled={isAdding || !formData.name.trim() || !formData.email.trim()}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+                >
+                  {isAdding ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Staff
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Edit Staff Sheet */}
+      <Sheet open={editDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedStaff(null);
+          resetForm();
+        }
+        setEditDialogOpen(open);
+      }}>
+        <SheetContent className="sm:max-w-lg h-[700px] m-auto rounded-3xl p-4 w-full">
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="shrink-0 px-6 py-6 border-b border-gray-200 bg-gradient-to-r from-amber-50 to-orange-50">
+              <SheetHeader className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center shadow-sm">
+                    <Edit className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <SheetTitle className="text-2xl font-bold text-gray-900">Edit Staff</SheetTitle>
+                    <SheetDescription className="text-gray-600 mt-1">
+                      Update staff information and settings.
+                    </SheetDescription>
+                  </div>
+                </div>
+              </SheetHeader>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <UserCheck className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Basic Information</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-name" className="text-sm font-medium text-gray-700">
+                        Full Name *
+                      </Label>
+                      <Input
+                        id="edit-name"
+                        value={formData.name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Enter full name"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-role" className="text-sm font-medium text-gray-700">
+                        Role *
+                      </Label>
+                      <Input
+                        id="edit-role"
+                        value={formData.role}
+                        onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+                        placeholder="e.g., Master Barber"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-gender" className="text-sm font-medium text-gray-700">
+                        Gender
+                      </Label>
+                      <Select
+                        value={formData.gender}
+                        onValueChange={(value: 'male' | 'female' | 'other') => 
+                          setFormData(prev => ({ ...prev, gender: value }))
+                        }
+                        disabled={isEditing}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select gender" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="male">Male</SelectItem>
+                          <SelectItem value="female">Female</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-dateOfBirth" className="text-sm font-medium text-gray-700">
+                        Date of Birth
+                      </Label>
+                      <Input
+                        id="edit-dateOfBirth"
+                        type="date"
+                        value={formData.dateOfBirth}
+                        onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-nationality" className="text-sm font-medium text-gray-700">
+                      Nationality
+                    </Label>
+                    <Input
+                      id="edit-nationality"
+                      value={formData.nationality}
+                      onChange={(e) => setFormData(prev => ({ ...prev, nationality: e.target.value }))}
+                      placeholder="e.g., Pakistani, American"
+                      className="mt-1"
+                      disabled={isEditing}
+                    />
+                  </div>
+                </div>
+
+                {/* Contact & Employment */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <Phone className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contact & Employment</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-email" className="text-sm font-medium text-gray-700">
+                        Email Address *
+                      </Label>
+                      <Input
+                        id="edit-email"
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="Enter email address"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-phone" className="text-sm font-medium text-gray-700">
+                        Phone Number *
+                      </Label>
+                      <Input
+                        id="edit-phone"
+                        value={formData.phone}
+                        onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="Enter phone number"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-emergencyContact" className="text-sm font-medium text-gray-700">
+                      Emergency Contact
+                    </Label>
+                    <Input
+                      id="edit-emergencyContact"
+                      value={formData.emergencyContact}
+                      onChange={(e) => setFormData(prev => ({ ...prev, emergencyContact: e.target.value }))}
+                      placeholder="Emergency contact number"
+                      className="mt-1"
+                      disabled={isEditing}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-branch" className="text-sm font-medium text-gray-700">
+                      Branch {user?.role === 'admin' ? '(Auto-selected)' : '*'}
+                    </Label>
+                    <Select
+                      value={formData.branch}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, branch: value }))}
+                      disabled={isEditing || user?.role === 'admin'}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {user?.role === 'admin' ? (
+                          // Branch admin ke liye sirf uski branch
+                          <SelectItem value={user.branchName || ''}>
+                            {user.branchName || 'Your Branch'}
+                          </SelectItem>
+                        ) : (
+                          // Super admin ke liye sab branches
+                          <>
+                            {branches.map(branch => (
+                              <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {user?.role === 'admin' && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Staff can only be in your assigned branch: <strong>{user.branchName}</strong>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-salary" className="text-sm font-medium text-gray-700">
+                        Salary *
+                      </Label>
+                      <Input
+                        id="edit-salary"
+                        type="number"
+                        value={formData.salary}
+                        onChange={(e) => setFormData(prev => ({ ...prev, salary: parseInt(e.target.value) || 0 }))}
+                        placeholder="Enter annual salary"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-experience" className="text-sm font-medium text-gray-700">
+                        Experience *
+                      </Label>
+                      <Input
+                        id="edit-experience"
+                        value={formData.experience}
+                        onChange={(e) => setFormData(prev => ({ ...prev, experience: e.target.value }))}
+                        placeholder="e.g., 5 years"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-hireDate" className="text-sm font-medium text-gray-700">
+                        Hire Date *
+                      </Label>
+                      <Input
+                        id="edit-hireDate"
+                        type="date"
+                        value={formData.hireDate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, hireDate: e.target.value }))}
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-status" className="text-sm font-medium text-gray-700">
+                        Status
+                      </Label>
+                      <Select
+                        value={formData.status}
+                        onValueChange={(value: 'active' | 'inactive' | 'on_leave') =>
+                          setFormData(prev => ({ ...prev, status: value }))
+                        }
+                        disabled={isEditing}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="on_leave">On Leave</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-rating" className="text-sm font-medium text-gray-700">
+                        Rating
+                      </Label>
+                      <Input
+                        id="edit-rating"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="5"
+                        value={formData.rating}
+                        onChange={(e) => setFormData(prev => ({ ...prev, rating: parseFloat(e.target.value) || 0 }))}
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-reviews" className="text-sm font-medium text-gray-700">
+                        Reviews
+                      </Label>
+                      <Input
+                        id="edit-reviews"
+                        type="number"
+                        value={formData.reviews}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reviews: parseInt(e.target.value) || 0 }))}
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Document Details */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <File className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Document Details</h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-documentId" className="text-sm font-medium text-gray-700">
+                        Document ID (CNIC/Passport)
+                      </Label>
+                      <Input
+                        id="edit-documentId"
+                        value={formData.documentId}
+                        onChange={(e) => setFormData(prev => ({ ...prev, documentId: e.target.value }))}
+                        placeholder="Enter document number"
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-visaExpiry" className="text-sm font-medium text-gray-700">
+                        Visa Expiry Date
+                      </Label>
+                      <Input
+                        id="edit-visaExpiry"
+                        type="date"
+                        value={formData.visaExpiry}
+                        onChange={(e) => setFormData(prev => ({ ...prev, visaExpiry: e.target.value }))}
+                        className="mt-1"
+                        disabled={isEditing}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="edit-bloodGroup" className="text-sm font-medium text-gray-700">
+                        Blood Group
+                      </Label>
+                      <Select
+                        value={formData.bloodGroup}
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, bloodGroup: value }))}
+                        disabled={isEditing}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select blood group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="A+">A+</SelectItem>
+                          <SelectItem value="A-">A-</SelectItem>
+                          <SelectItem value="B+">B+</SelectItem>
+                          <SelectItem value="B-">B-</SelectItem>
+                          <SelectItem value="AB+">AB+</SelectItem>
+                          <SelectItem value="AB-">AB-</SelectItem>
+                          <SelectItem value="O+">O+</SelectItem>
+                          <SelectItem value="O-">O-</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-maritalStatus" className="text-sm font-medium text-gray-700">
+                        Marital Status
+                      </Label>
+                      <Select
+                        value={formData.maritalStatus}
+                        onValueChange={(value: 'single' | 'married' | 'divorced' | 'widowed') =>
+                          setFormData(prev => ({ ...prev, maritalStatus: value }))
+                        }
+                        disabled={isEditing}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="single">Single</SelectItem>
+                          <SelectItem value="married">Married</SelectItem>
+                          <SelectItem value="divorced">Divorced</SelectItem>
+                          <SelectItem value="widowed">Widowed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Information */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                    <Building className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Additional Information</h3>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-address" className="text-sm font-medium text-gray-700">
+                      Address
+                    </Label>
+                    <Textarea
+                      id="edit-address"
+                      value={formData.address}
+                      onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                      placeholder="Enter address"
+                      rows={2}
+                      className="mt-1"
+                      disabled={isEditing}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-description" className="text-sm font-medium text-gray-700">
+                      Description
+                    </Label>
+                    <Textarea
+                      id="edit-description"
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      placeholder="Enter description"
+                      rows={2}
+                      className="mt-1"
+                      disabled={isEditing}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="edit-avatar" className="text-sm font-medium text-gray-700">
+                      Profile Image URL
+                    </Label>
+                    <Input
+                      id="edit-avatar"
+                      value={formData.avatar}
+                      onChange={(e) => setFormData(prev => ({ ...prev, avatar: e.target.value }))}
+                      placeholder="Enter image URL (optional)"
+                      className="mt-1"
+                      disabled={isEditing}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 px-6 py-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditDialogOpen(false);
+                    setSelectedStaff(null);
+                    resetForm();
+                  }}
+                  className="w-full sm:w-auto"
+                  disabled={isEditing}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleEditStaff}
+                  disabled={isEditing || !formData.name.trim() || !formData.email.trim()}
+                  className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700"
+                >
+                  {isEditing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Update Staff
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Delete Confirmation Sheet */}
+      <Sheet open={deleteDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedStaff(null);
+        }
+        setDeleteDialogOpen(open);
+      }}>
+        <SheetContent className="sm:max-w-md m-auto rounded-3xl p-4 w-full">
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="shrink-0 px-6 py-6 border-b border-gray-200 bg-gradient-to-r from-red-50 to-pink-50">
+              <SheetHeader className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center shadow-sm">
+                    <Trash2 className="w-6 h-6 text-red-600" />
+                  </div>
+                  <div>
+                    <SheetTitle className="text-2xl font-bold text-gray-900">Delete Staff</SheetTitle>
+                    <SheetDescription className="text-gray-600 mt-1">
+                      This action cannot be undone.
+                    </SheetDescription>
+                  </div>
+                </div>
+              </SheetHeader>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 px-6 py-6">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-red-900 mb-2">
+                      Are you sure you want to delete this staff member?
+                    </h3>
+                    <p className="text-red-700 mb-4">
+                      This will permanently delete <strong>"{selectedStaff?.name}"</strong>.
+                      All associated data will be removed.
+                    </p>
+                    <div className="bg-white rounded-lg p-4 border border-red-300">
+                      <div className="flex items-center gap-3">
+                        {selectedStaff?.avatar ? (
+                          <img
+                            src={selectedStaff.avatar}
+                            alt={selectedStaff.name}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
+                            {selectedStaff?.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-gray-900">{selectedStaff?.name}</p>
+                          <p className="text-sm text-gray-600">{selectedStaff?.role} • {selectedStaff?.branch}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              {selectedStaff?.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 px-6 py-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteDialogOpen(false);
+                    setSelectedStaff(null);
+                  }}
+                  className="w-full sm:w-auto"
+                  disabled={isDeleting === selectedStaff?.id}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteStaff}
+                  disabled={isDeleting === selectedStaff?.id}
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700"
+                >
+                  {isDeleting === selectedStaff?.id ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Staff
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </ProtectedRoute>
   );
 }

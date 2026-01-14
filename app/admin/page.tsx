@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Users, DollarSign, TrendingUp, Clock, CheckCircle, XCircle, LogOut, ChevronRight, MessageCircle, Package, Scissors } from "lucide-react";
-import ProtectedRoute from "@/components/ProtectedRoute";
+
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
@@ -49,7 +49,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <ProtectedRoute requiredRole="branch_admin">
+   
       <div className="flex h-screen bg-[#f8f9fa]">
         {/* Sidebar */}
         <AdminSidebar
@@ -300,6 +300,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-    </ProtectedRoute>
+    
   );
 }

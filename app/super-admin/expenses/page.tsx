@@ -1,246 +1,546 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, Edit, TrendingUp, TrendingDown, DollarSign, Target, Filter, Download, RotateCw, Building2, BarChart3 } from 'lucide-react';
+import { 
+  DollarSign, 
+  TrendingUp, 
+  TrendingDown, 
+  Package, 
+  Calendar, 
+  BarChart3, 
+  Filter,
+  Download,
+  RefreshCw,
+  Building2,
+  Clock,
+  ShoppingCart,
+  Percent,
+  AlertCircle,
+  Loader2,
+  Eye,
+  FileText,
+  PieChart,
+  TrendingUp as TrendingUpIcon
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
+import { db } from '@/lib/firebase';
+import { 
+  collection, 
+  query, 
+  getDocs, 
+  Timestamp,
+  where,
+  orderBy,
+  startAt,
+  endAt 
+} from 'firebase/firestore';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts';
 
-interface BranchExpense {
+// Firebase Interfaces
+interface Product {
   id: string;
-  branchId: string;
-  branchName: string;
-  category: string;
+  name: string;
   description: string;
-  amount: number;
-  date: string;
-  status: 'pending' | 'approved' | 'rejected';
-  notes: string;
-}
-
-interface BranchMetrics {
-  branchId: string;
-  branchName: string;
+  price: number;
+  cost: number;
+  category: string;
+  categoryId: string;
+  imageUrl: string;
+  branchNames: string[];
+  branches: string[];
+  stock: number;
+  totalStock: number;
+  totalSold: number;
   revenue: number;
-  expenses: number;
-  profit: number;
-  profitMargin: number;
+  status: 'active' | 'inactive';
+  createdAt: any;
+  updatedAt: any;
+  sku: string;
+  rating: number;
+  reviews: number;
 }
 
-const BRANCHES = [
-  { id: 'branch1', name: 'Downtown' },
-  { id: 'branch2', name: 'Uptown' },
-  { id: 'branch3', name: 'Mall' }
-];
+interface Service {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  duration: number;
+  category: string;
+  categoryId: string;
+  imageUrl: string;
+  branchNames: string[];
+  branches: string[];
+  status: 'active' | 'inactive';
+  popularity: string;
+  revenue: number;
+  totalBookings: number;
+  createdAt: any;
+  updatedAt: any;
+}
 
-const EXPENSE_CATEGORIES = [
-  'Staff Salaries',
-  'Rent',
-  'Utilities',
-  'Supplies',
-  'Equipment',
-  'Marketing',
-  'Maintenance',
-  'Other'
-];
+interface Booking {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  servicePrice: number;
+  totalAmount: number;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  date: string;
+  time: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  notes: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+interface ExpenseSummary {
+  totalProductsCost: number;
+  totalServicesCost: number;
+  totalAppointmentsCost: number;
+  totalExpenses: number;
+  totalRevenue: number;
+  totalProfit: number;
+  profitMargin: number;
+  monthWiseData: Array<{
+    month: string;
+    productsCost: number;
+    servicesCost: number;
+    appointmentsCost: number;
+    totalCost: number;
+    revenue: number;
+    profit: number;
+  }>;
+  branchWiseData: Array<{
+    branch: string;
+    productsCost: number;
+    servicesCost: number;
+    appointmentsCost: number;
+    totalCost: number;
+  }>;
+  categoryWiseData: Array<{
+    category: string;
+    productsCost: number;
+    servicesCost: number;
+    totalCost: number;
+  }>;
+}
 
 export default function SuperAdminExpensesPage() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // Data States
+  const [products, setProducts] = useState<Product[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expenseSummary, setExpenseSummary] = useState<ExpenseSummary>({
+    totalProductsCost: 0,
+    totalServicesCost: 0,
+    totalAppointmentsCost: 0,
+    totalExpenses: 0,
+    totalRevenue: 0,
+    totalProfit: 0,
+    profitMargin: 0,
+    monthWiseData: [],
+    branchWiseData: [],
+    categoryWiseData: []
+  });
+
+  // Filter States
+  const [selectedBranch, setSelectedBranch] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [dateRange, setDateRange] = useState({
+    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
+  const [activeTab, setActiveTab] = useState('overview');
 
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
-  const [expenses, setExpenses] = useState<BranchExpense[]>([
-    {
-      id: '1',
-      branchId: 'branch1',
-      branchName: 'Downtown',
-      category: 'Staff Salaries',
-      description: 'Monthly payroll',
-      amount: 8500,
-      date: '2026-01-02',
-      status: 'approved',
-      notes: 'Regular monthly'
-    },
-    {
-      id: '2',
-      branchId: 'branch2',
-      branchName: 'Uptown',
-      category: 'Rent',
-      description: 'Monthly rent',
-      amount: 2500,
-      date: '2026-01-01',
-      status: 'approved',
-      notes: 'Monthly rent'
-    },
-    {
-      id: '3',
-      branchId: 'branch3',
-      branchName: 'Mall',
-      category: 'Supplies',
-      description: 'Hair products',
-      amount: 450,
-      date: '2026-01-03',
-      status: 'pending',
-      notes: 'Bulk supply'
+
+  // Fetch all data
+  useEffect(() => {
+    fetchAllData();
+  }, []);
+
+  const fetchAllData = async () => {
+    try {
+      setLoading(true);
+      await Promise.all([
+        fetchProducts(),
+        fetchServices(),
+        fetchBookings()
+      ]);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
     }
-  ]);
-
-  const [selectedBranch, setSelectedBranch] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
-  const [newExpense, setNewExpense] = useState({
-    branchId: '',
-    category: '',
-    description: '',
-    amount: '',
-    date: new Date().toISOString().split('T')[0],
-    notes: ''
-  });
-
-  // Calculate metrics by branch
-  const branchMetrics = BRANCHES.map(branch => {
-    const branchExpenses = expenses
-      .filter(e => e.branchId === branch.id && e.status !== 'rejected')
-      .reduce((sum, e) => sum + e.amount, 0);
-    
-    const revenue = 15000; // Mock revenue per branch
-    const profit = revenue - branchExpenses;
-    const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
-    
-    return {
-      branchId: branch.id,
-      branchName: branch.name,
-      revenue,
-      expenses: branchExpenses,
-      profit,
-      profitMargin
-    };
-  });
-
-  // Overall metrics
-  const totalRevenue = branchMetrics.reduce((sum, b) => sum + b.revenue, 0);
-  const totalExpenses = branchMetrics.reduce((sum, b) => sum + b.expenses, 0);
-  const totalProfit = totalRevenue - totalExpenses;
-  const overallMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(2) : '0';
-
-  // Filter expenses
-  const filteredExpenses = expenses.filter(expense => {
-    const branchMatch = selectedBranch === 'all' || expense.branchId === selectedBranch;
-    const statusMatch = filterStatus === 'all' || expense.status === filterStatus;
-    const categoryMatch = filterCategory === 'all' || expense.category === filterCategory;
-    const searchMatch = 
-      expense.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      expense.branchName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return branchMatch && statusMatch && categoryMatch && searchMatch;
-  });
-
-  const handleApproveExpense = (id: string) => {
-    setExpenses(expenses.map(e => 
-      e.id === id ? { ...e, status: 'approved' } : e
-    ));
   };
 
-  const handleRejectExpense = (id: string) => {
-    setExpenses(expenses.map(e => 
-      e.id === id ? { ...e, status: 'rejected' } : e
-    ));
+  const fetchProducts = async () => {
+    try {
+      const productsRef = collection(db, 'products');
+      const q = query(productsRef, where('status', '==', 'active'));
+      const querySnapshot = await getDocs(q);
+      
+      const productsData: Product[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        productsData.push({
+          id: doc.id,
+          name: data.name || '',
+          description: data.description || '',
+          price: data.price || 0,
+          cost: data.cost || 0,
+          category: data.category || '',
+          categoryId: data.categoryId || '',
+          imageUrl: data.imageUrl || '',
+          branchNames: data.branchNames || [],
+          branches: data.branches || [],
+          stock: data.stock || 0,
+          totalStock: data.totalStock || 0,
+          totalSold: data.totalSold || 0,
+          revenue: data.revenue || 0,
+          status: data.status || 'active',
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          sku: data.sku || '',
+          rating: data.rating || 0,
+          reviews: data.reviews || 0
+        });
+      });
+      
+      setProducts(productsData);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    }
   };
 
-  const handleDeleteExpense = (id: string) => {
-    setExpenses(expenses.filter(e => e.id !== id));
+  const fetchServices = async () => {
+    try {
+      const servicesRef = collection(db, 'services');
+      const q = query(servicesRef, where('status', '==', 'active'));
+      const querySnapshot = await getDocs(q);
+      
+      const servicesData: Service[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        servicesData.push({
+          id: doc.id,
+          name: data.name || '',
+          description: data.description || '',
+          price: data.price || 0,
+          duration: data.duration || 0,
+          category: data.category || '',
+          categoryId: data.categoryId || '',
+          imageUrl: data.imageUrl || '',
+          branchNames: data.branchNames || [],
+          branches: data.branches || [],
+          status: data.status || 'active',
+          popularity: data.popularity || 'low',
+          revenue: data.revenue || 0,
+          totalBookings: data.totalBookings || 0,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        });
+      });
+      
+      setServices(servicesData);
+    } catch (error) {
+      console.error('Error fetching services:', error);
+    }
   };
 
-  const handleAddExpense = () => {
-    if (!newExpense.branchId || !newExpense.category || !newExpense.description || !newExpense.amount) return;
+  const fetchBookings = async () => {
+    try {
+      const bookingsRef = collection(db, 'bookings');
+      const q = query(bookingsRef, orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      
+      const bookingsData: Booking[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        bookingsData.push({
+          id: doc.id,
+          serviceId: data.serviceId || '',
+          serviceName: data.serviceName || '',
+          servicePrice: data.servicePrice || 0,
+          totalAmount: data.totalAmount || 0,
+          customerId: data.customerId || '',
+          customerName: data.customerName || '',
+          customerEmail: data.customerEmail || '',
+          date: data.date || '',
+          time: data.time || '',
+          status: data.status || 'pending',
+          notes: data.notes || '',
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        });
+      });
+      
+      setBookings(bookingsData);
+    } catch (error) {
+      console.error('Error fetching bookings:', error);
+    }
+  };
+
+  // Calculate expense summary
+  useEffect(() => {
+    if (products.length > 0 || services.length > 0 || bookings.length > 0) {
+      calculateExpenseSummary();
+    }
+  }, [products, services, bookings, selectedBranch, selectedMonth, dateRange]);
+
+  const calculateExpenseSummary = () => {
+    // Filter data based on selected branch
+    const filteredProducts = selectedBranch === 'all' 
+      ? products 
+      : products.filter(p => p.branchNames.includes(selectedBranch));
     
-    const branch = BRANCHES.find(b => b.id === newExpense.branchId);
-    const newExpenseItem: BranchExpense = {
-      id: Date.now().toString(),
-      branchId: newExpense.branchId,
-      branchName: branch?.name || '',
-      category: newExpense.category,
-      description: newExpense.description,
-      amount: parseFloat(newExpense.amount),
-      date: newExpense.date,
-      status: 'pending',
-      notes: newExpense.notes
-    };
+    const filteredServices = selectedBranch === 'all' 
+      ? services 
+      : services.filter(s => s.branchNames.includes(selectedBranch));
     
-    setExpenses([...expenses, newExpenseItem]);
-    setNewExpense({
-      branchId: '',
-      category: '',
-      description: '',
-      amount: '',
-      date: new Date().toISOString().split('T')[0],
-      notes: ''
+    const filteredBookings = selectedBranch === 'all' 
+      ? bookings 
+      : bookings.filter(b => {
+          // Find service for this booking to get branch info
+          const service = services.find(s => s.id === b.serviceId);
+          return service?.branchNames.includes(selectedBranch);
+        });
+
+    // Calculate total products cost (cost * totalStock)
+    const totalProductsCost = filteredProducts.reduce((sum, product) => 
+      sum + (product.cost * product.totalStock), 0
+    );
+
+    // Calculate total services cost (considering services as fixed costs)
+    const totalServicesCost = filteredServices.reduce((sum, service) => {
+      // Add base cost for each service (you can add service cost field later)
+      return sum + (service.price * 0.3); // Assuming 30% of price as cost
+    }, 0);
+
+    // Calculate total appointments cost (completed bookings)
+    const completedBookings = filteredBookings.filter(b => b.status === 'completed');
+    const totalAppointmentsCost = completedBookings.reduce((sum, booking) => 
+      sum + (booking.totalAmount * 0.4), 0 // Assuming 40% of booking amount as cost
+    );
+
+    // Calculate revenue
+    const totalRevenue = completedBookings.reduce((sum, booking) => 
+      sum + booking.totalAmount, 0
+    );
+
+    // Calculate totals
+    const totalExpenses = totalProductsCost + totalServicesCost + totalAppointmentsCost;
+    const totalProfit = totalRevenue - totalExpenses;
+    const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+    // Generate month-wise data
+    const monthWiseData = generateMonthWiseData();
+    const branchWiseData = generateBranchWiseData();
+    const categoryWiseData = generateCategoryWiseData();
+
+    setExpenseSummary({
+      totalProductsCost,
+      totalServicesCost,
+      totalAppointmentsCost,
+      totalExpenses,
+      totalRevenue,
+      totalProfit,
+      profitMargin,
+      monthWiseData,
+      branchWiseData,
+      categoryWiseData
     });
   };
 
-  const handleEditExpense = (expense: BranchExpense) => {
-    // For now, just log the expense to edit
-    console.log('Edit expense:', expense);
+  const generateMonthWiseData = () => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const currentYear = new Date().getFullYear();
+    
+    return months.map(month => {
+      const monthIndex = months.indexOf(month);
+      const monthStart = new Date(currentYear, monthIndex, 1);
+      const monthEnd = new Date(currentYear, monthIndex + 1, 0);
+      
+      // Filter bookings for this month
+      const monthBookings = bookings.filter(b => {
+        const bookingDate = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+        return bookingDate >= monthStart && bookingDate <= monthEnd && b.status === 'completed';
+      });
+      
+      // Calculate costs for this month
+      const appointmentsCost = monthBookings.reduce((sum, b) => sum + (b.totalAmount * 0.4), 0);
+      const revenue = monthBookings.reduce((sum, b) => sum + b.totalAmount, 0);
+      
+      // For simplicity, distribute products and services costs evenly across months
+      const productsCost = expenseSummary.totalProductsCost / 12;
+      const servicesCost = expenseSummary.totalServicesCost / 12;
+      const totalCost = productsCost + servicesCost + appointmentsCost;
+      const profit = revenue - totalCost;
+      
+      return {
+        month,
+        productsCost: parseFloat(productsCost.toFixed(2)),
+        servicesCost: parseFloat(servicesCost.toFixed(2)),
+        appointmentsCost: parseFloat(appointmentsCost.toFixed(2)),
+        totalCost: parseFloat(totalCost.toFixed(2)),
+        revenue: parseFloat(revenue.toFixed(2)),
+        profit: parseFloat(profit.toFixed(2))
+      };
+    });
   };
 
-  const handleReconciliation = () => {
-    setExpenses(expenses.map(e => 
-      e.status === 'pending' ? { ...e, status: 'approved' } : e
-    ));
+  const generateBranchWiseData = () => {
+    const allBranches = Array.from(
+      new Set([
+        ...products.flatMap(p => p.branchNames),
+        ...services.flatMap(s => s.branchNames)
+      ])
+    );
+
+    return allBranches.map(branch => {
+      const branchProducts = products.filter(p => p.branchNames.includes(branch));
+      const branchServices = services.filter(s => s.branchNames.includes(branch));
+      
+      const productsCost = branchProducts.reduce((sum, p) => sum + (p.cost * p.totalStock), 0);
+      const servicesCost = branchServices.reduce((sum, s) => sum + (s.price * 0.3), 0);
+      
+      // Find bookings for this branch
+      const branchBookings = bookings.filter(b => {
+        const service = services.find(s => s.id === b.serviceId);
+        return service?.branchNames.includes(branch);
+      });
+      
+      const appointmentsCost = branchBookings
+        .filter(b => b.status === 'completed')
+        .reduce((sum, b) => sum + (b.totalAmount * 0.4), 0);
+      
+      const totalCost = productsCost + servicesCost + appointmentsCost;
+      
+      return {
+        branch,
+        productsCost: parseFloat(productsCost.toFixed(2)),
+        servicesCost: parseFloat(servicesCost.toFixed(2)),
+        appointmentsCost: parseFloat(appointmentsCost.toFixed(2)),
+        totalCost: parseFloat(totalCost.toFixed(2))
+      };
+    });
   };
 
-  const downloadComprehensiveReport = () => {
+  const generateCategoryWiseData = () => {
+    const allCategories = Array.from(
+      new Set([
+        ...products.map(p => p.category),
+        ...services.map(s => s.category)
+      ])
+    ).filter(Boolean);
+
+    return allCategories.map(category => {
+      const categoryProducts = products.filter(p => p.category === category);
+      const categoryServices = services.filter(s => s.category === category);
+      
+      const productsCost = categoryProducts.reduce((sum, p) => sum + (p.cost * p.totalStock), 0);
+      const servicesCost = categoryServices.reduce((sum, s) => sum + (s.price * 0.3), 0);
+      const totalCost = productsCost + servicesCost;
+      
+      return {
+        category,
+        productsCost: parseFloat(productsCost.toFixed(2)),
+        servicesCost: parseFloat(servicesCost.toFixed(2)),
+        totalCost: parseFloat(totalCost.toFixed(2))
+      };
+    });
+  };
+
+  const getBranchOptions = () => {
+    const allBranches = Array.from(
+      new Set([
+        ...products.flatMap(p => p.branchNames),
+        ...services.flatMap(s => s.branchNames)
+      ])
+    );
+    return allBranches;
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2
+    }).format(amount);
+  };
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+
+  const downloadExpenseReport = () => {
     let report = `
-COMPREHENSIVE EXPENSE REPORT - ALL BRANCHES
+COMPREHENSIVE EXPENSE ANALYSIS REPORT
 Generated: ${new Date().toLocaleDateString()}
+Period: ${dateRange.start} to ${dateRange.end}
 
 OVERALL SUMMARY
-Total Revenue: $${totalRevenue.toLocaleString()}
-Total Expenses: $${totalExpenses.toLocaleString()}
-Total Profit: $${totalProfit.toLocaleString()}
-Overall Profit Margin: ${overallMargin}%
+Total Products Cost: ${formatCurrency(expenseSummary.totalProductsCost)}
+Total Services Cost: ${formatCurrency(expenseSummary.totalServicesCost)}
+Total Appointments Cost: ${formatCurrency(expenseSummary.totalAppointmentsCost)}
+Total Expenses: ${formatCurrency(expenseSummary.totalExpenses)}
+Total Revenue: ${formatCurrency(expenseSummary.totalRevenue)}
+Total Profit: ${formatCurrency(expenseSummary.totalProfit)}
+Profit Margin: ${expenseSummary.profitMargin.toFixed(2)}%
 
-BRANCH BREAKDOWN
-`;
+BRANCH-WISE EXPENSES
+${expenseSummary.branchWiseData.map(b => 
+  `${b.branch}: Products: ${formatCurrency(b.productsCost)}, Services: ${formatCurrency(b.servicesCost)}, Appointments: ${formatCurrency(b.appointmentsCost)}, Total: ${formatCurrency(b.totalCost)}`
+).join('\n')}
 
-    branchMetrics.forEach(branch => {
-      report += `
-${branch.branchName.toUpperCase()}
-Revenue: $${branch.revenue.toLocaleString()}
-Expenses: $${branch.expenses.toLocaleString()}
-Profit: $${branch.profit.toLocaleString()}
-Profit Margin: ${branch.profitMargin.toFixed(2)}%
----`;
-    });
+MONTH-WISE EXPENSES (${new Date().getFullYear()})
+${expenseSummary.monthWiseData.map(m => 
+  `${m.month}: Products: ${formatCurrency(m.productsCost)}, Services: ${formatCurrency(m.servicesCost)}, Appointments: ${formatCurrency(m.appointmentsCost)}, Revenue: ${formatCurrency(m.revenue)}, Profit: ${formatCurrency(m.profit)}`
+).join('\n')}
 
-    report += `
-
-DETAILED EXPENSES
-${filteredExpenses.map(e => 
-  `${e.date} | ${e.branchName} | ${e.category} | ${e.description} | $${e.amount} | ${e.status.toUpperCase()}`
+CATEGORY-WISE EXPENSES
+${expenseSummary.categoryWiseData.map(c => 
+  `${c.category}: Products: ${formatCurrency(c.productsCost)}, Services: ${formatCurrency(c.servicesCost)}, Total: ${formatCurrency(c.totalCost)}`
 ).join('\n')}
     `;
     
     const element = document.createElement('a');
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(report));
-    element.setAttribute('download', 'comprehensive-expense-report.txt');
+    element.setAttribute('download', `expense-report-${new Date().toISOString().split('T')[0]}.txt`);
     element.style.display = 'none';
     document.body.appendChild(element);
     element.click();
@@ -271,8 +571,8 @@ ${filteredExpenses.map(e =>
                   onToggle={() => setSidebarOpen(!sidebarOpen)}
                 />
                 <div>
-                  <h1 className="text-2xl font-serif font-bold text-primary">Branch Expense Management</h1>
-                  <p className="text-sm text-muted-foreground">Monitor and reconcile expenses across all locations</p>
+                  <h1 className="text-2xl font-serif font-bold text-primary">Expense Analysis Dashboard</h1>
+                  <p className="text-sm text-muted-foreground">Track and analyze expenses across products, services, and appointments</p>
                 </div>
               </div>
             </div>
@@ -281,354 +581,575 @@ ${filteredExpenses.map(e =>
           {/* Page Content */}
           <div className="flex-1 overflow-auto p-4 lg:p-8">
             <div className="max-w-7xl mx-auto">
+              {/* Filters */}
+              <div className="flex flex-col lg:flex-row gap-4 mb-8">
+                <div className="flex-1 flex flex-wrap gap-2">
+                  <div className="flex gap-2">
+                    <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                      <SelectTrigger className="w-48 rounded-lg border-gray-200">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4" />
+                          <SelectValue placeholder="Select Branch" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Branches</SelectItem>
+                        {getBranchOptions().map(branch => (
+                          <SelectItem key={branch} value={branch}>{branch}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                      <SelectTrigger className="w-48 rounded-lg border-gray-200">
+                        <div className="flex items-center gap-2"/>
+                          <Calendar className="w-4 h-4" />
+                          <SelectValue placeholder="Select Month" />
+                      
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(month => (
+                          <SelectItem key={month} value={month}>{month} 2026</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Input
+                      type="date"
+                      value={dateRange.start}
+                      onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
+                      className="rounded-lg border-gray-200 w-40"
+                    />
+                    <Input
+                      type="date"
+                      value={dateRange.end}
+                      onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
+                      className="rounded-lg border-gray-200 w-40"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={fetchAllData}
+                    variant="outline"
+                    className="border-gray-200 rounded-lg flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Refresh
+                  </Button>
+                  <Button
+                    onClick={downloadExpenseReport}
+                    variant="outline"
+                    className="border-gray-200 rounded-lg flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export Report
+                  </Button>
+                </div>
+              </div>
+
               <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="grid w-full grid-cols-2 rounded-lg">
+                <TabsList className="grid w-full grid-cols-3 rounded-lg">
                   <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="details">Detailed View</TabsTrigger>
+                  <TabsTrigger value="analysis">Detailed Analysis</TabsTrigger>
+                  <TabsTrigger value="data">Raw Data</TabsTrigger>
                 </TabsList>
 
+                {/* Overview Tab */}
                 <TabsContent value="overview" className="space-y-6">
-                  {/* Overall KPI Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                  {/* Key Metrics */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card className="border-none shadow-sm rounded-xl">
                       <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Revenue</p>
-                            <p className="text-3xl font-serif font-bold text-primary">${branchMetrics.reduce((sum, m) => sum + m.revenue, 0).toLocaleString()}</p>
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Expenses</p>
+                            <p className="text-3xl font-serif font-bold text-primary">
+                              {formatCurrency(expenseSummary.totalExpenses)}
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">Products, Services & Appointments</p>
                           </div>
                           <DollarSign className="w-12 h-12 text-secondary/20" />
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card className="border-none shadow-sm rounded-xl border-l-4 border-red-500">
+                    <Card className="border-none shadow-sm rounded-xl border-l-4 border-blue-500">
                       <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Expenses</p>
-                            <p className="text-3xl font-serif font-bold text-red-600">${branchMetrics.reduce((sum, m) => sum + m.expenses, 0).toLocaleString()}</p>
-                          </div>
-                          <TrendingDown className="w-12 h-12 text-red-500/20" />
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className={cn(
-                      "border-none shadow-sm rounded-xl",
-                      branchMetrics.reduce((sum, m) => sum + m.profit, 0) >= 0 ? "border-l-4 border-green-500" : "border-l-4 border-red-500"
-                    )}>
-                      <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Net Profit</p>
-                            <p className={cn(
-                              "text-3xl font-serif font-bold",
-                              branchMetrics.reduce((sum, m) => sum + m.profit, 0) >= 0 ? "text-green-600" : "text-red-600"
-                            )}>
-                              ${branchMetrics.reduce((sum, m) => sum + m.profit, 0).toLocaleString()}
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Products Cost</p>
+                            <p className="text-3xl font-serif font-bold text-blue-600">
+                              {formatCurrency(expenseSummary.totalProductsCost)}
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {products.length} active products
                             </p>
                           </div>
-                          <TrendingUp className={cn("w-12 h-12", branchMetrics.reduce((sum, m) => sum + m.profit, 0) >= 0 ? "text-green-500/20" : "text-red-500/20")} />
+                          <Package className="w-12 h-12 text-blue-500/20" />
                         </div>
                       </CardContent>
                     </Card>
 
-                    <Card className="border-none shadow-sm rounded-xl">
+                    <Card className="border-none shadow-sm rounded-xl border-l-4 border-green-500">
                       <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Avg Profit Margin</p>
-                            <p className="text-3xl font-serif font-bold text-primary">{(branchMetrics.reduce((sum, m) => sum + m.profitMargin, 0) / branchMetrics.length).toFixed(2)}%</p>
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Services Cost</p>
+                            <p className="text-3xl font-serif font-bold text-green-600">
+                              {formatCurrency(expenseSummary.totalServicesCost)}
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {services.length} active services
+                            </p>
                           </div>
-                          <Target className="w-12 h-12 text-secondary/20" />
+                          <ShoppingCart className="w-12 h-12 text-green-500/20" />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-none shadow-sm rounded-xl border-l-4 border-purple-500">
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Appointments Cost</p>
+                            <p className="text-3xl font-serif font-bold text-purple-600">
+                              {formatCurrency(expenseSummary.totalAppointmentsCost)}
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {bookings.filter(b => b.status === 'completed').length} completed bookings
+                            </p>
+                          </div>
+                          <Calendar className="w-12 h-12 text-purple-500/20" />
                         </div>
                       </CardContent>
                     </Card>
                   </div>
 
-                  {/* Branch Performance Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {branchMetrics.map(metric => (
-                      <Card key={metric.branchId} className="border-none shadow-sm rounded-xl">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-lg font-serif flex items-center gap-2">
-                            <Building2 className="w-5 h-5 text-secondary" />
-                            {metric.branchName}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-4">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-muted-foreground">Revenue</span>
-                              <span className="font-bold text-primary">${metric.revenue.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-muted-foreground">Expenses</span>
-                              <span className="font-bold text-red-600">${metric.expenses.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-muted-foreground">Profit</span>
-                              <span className={cn(
-                                "font-bold",
-                                metric.profit >= 0 ? "text-green-600" : "text-red-600"
-                              )}>
-                                ${metric.profit.toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-muted-foreground">Margin</span>
-                              <span className="font-bold text-primary">{metric.profitMargin.toFixed(2)}%</span>
-                            </div>
+                  {/* Profit Metrics */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <Card className="border-none shadow-sm rounded-xl">
+                      <CardHeader>
+                        <CardTitle className="text-lg font-serif flex items-center gap-2">
+                          <TrendingUp className="w-5 h-5 text-secondary" />
+                          Revenue & Profit
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Total Revenue</span>
+                            <span className="text-lg font-bold text-green-600">
+                              {formatCurrency(expenseSummary.totalRevenue)}
+                            </span>
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Total Profit</span>
+                            <span className={cn(
+                              "text-lg font-bold",
+                              expenseSummary.totalProfit >= 0 ? "text-green-600" : "text-red-600"
+                            )}>
+                              {formatCurrency(expenseSummary.totalProfit)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Profit Margin</span>
+                            <span className={cn(
+                              "text-lg font-bold",
+                              expenseSummary.profitMargin >= 0 ? "text-green-600" : "text-red-600"
+                            )}>
+                              {expenseSummary.profitMargin.toFixed(2)}%
+                            </span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Expense Distribution Pie Chart */}
+                    <Card className="border-none shadow-sm rounded-xl lg:col-span-2">
+                      <CardHeader>
+                        <CardTitle className="text-lg font-serif flex items-center gap-2">
+                          <PieChart className="w-5 h-5 text-secondary" />
+                          Expense Distribution
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={[
+                                  { name: 'Products', value: expenseSummary.totalProductsCost },
+                                  { name: 'Services', value: expenseSummary.totalServicesCost },
+                                  { name: 'Appointments', value: expenseSummary.totalAppointmentsCost }
+                                ]}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                outerRadius={80}
+                                fill="#8884d8"
+                                dataKey="value"
+                              >
+                                {COLORS.map((color, index) => (
+                                  <Cell key={`cell-${index}`} fill={color} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                              <Legend />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
+
+                  {/* Monthly Trend Chart */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-secondary" />
+                        Monthly Expense Trend
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={expenseSummary.monthWiseData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="month" />
+                            <YAxis tickFormatter={(value) => `$${value}`} />
+                            <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                            <Legend />
+                            <Bar dataKey="productsCost" fill="#0088FE" name="Products Cost" />
+                            <Bar dataKey="servicesCost" fill="#00C49F" name="Services Cost" />
+                            <Bar dataKey="appointmentsCost" fill="#FFBB28" name="Appointments Cost" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </TabsContent>
 
-                <TabsContent value="details" className="space-y-6">
-                  {/* Actions and Filters */}
-                  <div className="flex flex-col lg:flex-row gap-4 mb-8">
-                    <div className="flex-1 flex gap-2">
-                      <Input
-                        placeholder="Search expenses..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="rounded-lg border-gray-200"
-                      />
-                      <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                        <SelectTrigger className="w-40 rounded-lg border-gray-200">
-                          <SelectValue placeholder="Branch" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Branches</SelectItem>
-                          {BRANCHES.map(branch => (
-                            <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={filterCategory} onValueChange={setFilterCategory}>
-                        <SelectTrigger className="w-40 rounded-lg border-gray-200">
-                          <SelectValue placeholder="Category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Categories</SelectItem>
-                          {EXPENSE_CATEGORIES.map(cat => (
-                            <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={filterStatus} onValueChange={setFilterStatus}>
-                        <SelectTrigger className="w-40 rounded-lg border-gray-200">
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Status</SelectItem>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="approved">Approved</SelectItem>
-                          <SelectItem value="rejected">Rejected</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleReconciliation}
-                        variant="outline"
-                        className="border-gray-200 rounded-lg flex items-center gap-2"
-                      >
-                        <RotateCw className="w-4 h-4" /> Reconcile
-                      </Button>
-                      <Button
-                        onClick={downloadComprehensiveReport}
-                        variant="outline"
-                        className="border-gray-200 rounded-lg flex items-center gap-2"
-                      >
-                        <Download className="w-4 h-4" /> Report
-                      </Button>
-                      <Sheet>
-                        <SheetTrigger asChild>
-                          <Button className="bg-secondary hover:bg-secondary/90 text-primary rounded-lg flex items-center gap-2">
-                            <Plus className="w-4 h-4" /> Add Expense
-                          </Button>
-                        </SheetTrigger>
-                        <SheetContent>
-                          <SheetHeader>
-                            <SheetTitle>Add New Expense</SheetTitle>
-                            <SheetDescription>
-                              Create a new expense record for a branch
-                            </SheetDescription>
-                          </SheetHeader>
-                          <div className="space-y-4 mt-6">
-                            <div>
-                              <Label className="text-xs font-bold uppercase">Branch</Label>
-                              <Select value={newExpense.branchId} onValueChange={(value) => setNewExpense({...newExpense, branchId: value})}>
-                                <SelectTrigger className="mt-1 rounded-lg">
-                                  <SelectValue placeholder="Select branch" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {BRANCHES.map(branch => (
-                                    <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <Label className="text-xs font-bold uppercase">Category</Label>
-                              <Select value={newExpense.category} onValueChange={(value) => setNewExpense({...newExpense, category: value})}>
-                                <SelectTrigger className="mt-1 rounded-lg">
-                                  <SelectValue placeholder="Select category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {EXPENSE_CATEGORIES.map(cat => (
-                                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <Label className="text-xs font-bold uppercase">Description</Label>
-                              <Input
-                                placeholder="Expense description"
-                                value={newExpense.description}
-                                onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}
-                                className="mt-1 rounded-lg"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs font-bold uppercase">Amount</Label>
-                              <Input
-                                type="number"
-                                placeholder="0.00"
-                                value={newExpense.amount}
-                                onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}
-                                className="mt-1 rounded-lg"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs font-bold uppercase">Date</Label>
-                              <Input
-                                type="date"
-                                value={newExpense.date}
-                                onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}
-                                className="mt-1 rounded-lg"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs font-bold uppercase">Notes</Label>
-                              <Textarea
-                                placeholder="Additional notes..."
-                                value={newExpense.notes}
-                                onChange={(e) => setNewExpense({...newExpense, notes: e.target.value})}
-                                className="mt-1 rounded-lg"
-                              />
-                            </div>
-                            <Button
-                              onClick={handleAddExpense}
-                              className="w-full bg-secondary hover:bg-secondary/90 text-primary rounded-lg font-bold"
-                            >
-                              Add Expense
-                            </Button>
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    </div>
-                  </div>
-
-                  {/* Expenses Table */}
-                  <Card className="border-none shadow-sm rounded-xl overflow-hidden">
-                    <CardHeader className="border-b border-gray-100 bg-gray-50">
-                      <CardTitle className="text-lg font-serif">All Branch Expenses ({filteredExpenses.length})</CardTitle>
+                {/* Detailed Analysis Tab */}
+                <TabsContent value="analysis" className="space-y-6">
+                  {/* Branch-wise Analysis */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <Building2 className="w-5 h-5 text-secondary" />
+                        Branch-wise Expense Analysis
+                      </CardTitle>
+                      <CardDescription>
+                        Detailed breakdown of expenses by branch
+                      </CardDescription>
                     </CardHeader>
-                    <CardContent className="p-0">
+                    <CardContent>
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-gray-50 border-b border-gray-100">
+                          <thead className="bg-gray-50">
                             <tr>
-                              <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Branch</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Date</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Category</th>
-                              <th className="px-6 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Description</th>
-                              <th className="px-6 py-3 text-right text-xs font-bold uppercase tracking-widest text-gray-600">Amount</th>
-                              <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-widest text-gray-600">Status</th>
-                              <th className="px-6 py-3 text-center text-xs font-bold uppercase tracking-widest text-gray-600">Actions</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Branch</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Products Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Services Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Appointments Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Total Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">% of Total</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {filteredExpenses.length === 0 ? (
-                              <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
-                                  No expenses found
+                            {expenseSummary.branchWiseData.map((branchData, index) => (
+                              <tr key={branchData.branch} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 font-medium">{branchData.branch}</td>
+                                <td className="px-4 py-3 text-blue-600 font-medium">
+                                  {formatCurrency(branchData.productsCost)}
+                                </td>
+                                <td className="px-4 py-3 text-green-600 font-medium">
+                                  {formatCurrency(branchData.servicesCost)}
+                                </td>
+                                <td className="px-4 py-3 text-purple-600 font-medium">
+                                  {formatCurrency(branchData.appointmentsCost)}
+                                </td>
+                                <td className="px-4 py-3 font-bold">
+                                  {formatCurrency(branchData.totalCost)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  {expenseSummary.totalExpenses > 0 
+                                    ? ((branchData.totalCost / expenseSummary.totalExpenses) * 100).toFixed(1)
+                                    : '0.0'
+                                  }%
                                 </td>
                               </tr>
-                            ) : (
-                              filteredExpenses.map(expense => (
-                                <tr key={expense.id} className="hover:bg-gray-50 transition-colors">
-                                  <td className="px-6 py-4 text-sm font-semibold">{expense.branchName}</td>
-                                  <td className="px-6 py-4 text-sm font-semibold">{expense.date}</td>
-                                  <td className="px-6 py-4 text-sm">{expense.category}</td>
-                                  <td className="px-6 py-4">
-                                    <div>
-                                      <p className="text-sm font-semibold">{expense.description}</p>
-                                      {expense.notes && <p className="text-xs text-muted-foreground">{expense.notes}</p>}
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4 text-right text-sm font-bold text-red-600">
-                                    ${expense.amount.toLocaleString()}
-                                  </td>
-                                  <td className="px-6 py-4 text-center">
-                                    <Badge variant={
-                                      expense.status === 'approved' ? 'default' :
-                                      expense.status === 'pending' ? 'secondary' :
-                                      'destructive'
-                                    } className="rounded-full">
-                                      {expense.status}
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-50 font-bold">
+                            <tr>
+                              <td className="px-4 py-3">Total</td>
+                              <td className="px-4 py-3 text-blue-600">
+                                {formatCurrency(expenseSummary.totalProductsCost)}
+                              </td>
+                              <td className="px-4 py-3 text-green-600">
+                                {formatCurrency(expenseSummary.totalServicesCost)}
+                              </td>
+                              <td className="px-4 py-3 text-purple-600">
+                                {formatCurrency(expenseSummary.totalAppointmentsCost)}
+                              </td>
+                              <td className="px-4 py-3">
+                                {formatCurrency(expenseSummary.totalExpenses)}
+                              </td>
+                              <td className="px-4 py-3">100%</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Category-wise Analysis */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-secondary" />
+                        Category-wise Expense Analysis
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={expenseSummary.categoryWiseData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="category" />
+                            <YAxis />
+                            <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                            <Legend />
+                            <Bar dataKey="productsCost" fill="#0088FE" name="Products Cost" />
+                            <Bar dataKey="servicesCost" fill="#00C49F" name="Services Cost" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Monthly Detailed Analysis */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-secondary" />
+                        Monthly Profit & Loss Statement
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Month</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Products Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Services Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Appointments Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Total Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Revenue</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Profit</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Margin</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {expenseSummary.monthWiseData.map((monthData) => (
+                              <tr key={monthData.month} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 font-medium">{monthData.month}</td>
+                                <td className="px-4 py-3">{formatCurrency(monthData.productsCost)}</td>
+                                <td className="px-4 py-3">{formatCurrency(monthData.servicesCost)}</td>
+                                <td className="px-4 py-3">{formatCurrency(monthData.appointmentsCost)}</td>
+                                <td className="px-4 py-3 font-bold">{formatCurrency(monthData.totalCost)}</td>
+                                <td className="px-4 py-3 text-green-600 font-medium">
+                                  {formatCurrency(monthData.revenue)}
+                                </td>
+                                <td className={cn(
+                                  "px-4 py-3 font-bold",
+                                  monthData.profit >= 0 ? "text-green-600" : "text-red-600"
+                                )}>
+                                  {formatCurrency(monthData.profit)}
+                                </td>
+                                <td className={cn(
+                                  "px-4 py-3",
+                                  monthData.profit >= 0 ? "text-green-600" : "text-red-600"
+                                )}>
+                                  {monthData.revenue > 0 ? ((monthData.profit / monthData.revenue) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Raw Data Tab */}
+                <TabsContent value="data" className="space-y-6">
+                  {/* Products Data */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <Package className="w-5 h-5 text-secondary" />
+                        Products Inventory & Cost ({products.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Product</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Category</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Cost per Unit</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Total Stock</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Total Cost</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Selling Price</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Branches</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {products.map((product) => (
+                              <tr key={product.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 font-medium">{product.name}</td>
+                                <td className="px-4 py-3">{product.category}</td>
+                                <td className="px-4 py-3">{formatCurrency(product.cost)}</td>
+                                <td className="px-4 py-3">{product.totalStock}</td>
+                                <td className="px-4 py-3 font-bold text-blue-600">
+                                  {formatCurrency(product.cost * product.totalStock)}
+                                </td>
+                                <td className="px-4 py-3 text-green-600">
+                                  {formatCurrency(product.price)}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    {product.branchNames.map(branch => (
+                                      <Badge key={branch} variant="outline" className="text-xs">
+                                        {branch}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Services Data */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <ShoppingCart className="w-5 h-5 text-secondary" />
+                        Services & Estimated Costs ({services.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Service</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Category</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Duration</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Selling Price</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Estimated Cost (30%)</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Total Bookings</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Branches</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {services.map((service) => (
+                              <tr key={service.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 font-medium">{service.name}</td>
+                                <td className="px-4 py-3">{service.category}</td>
+                                <td className="px-4 py-3">{service.duration} min</td>
+                                <td className="px-4 py-3 text-green-600">
+                                  {formatCurrency(service.price)}
+                                </td>
+                                <td className="px-4 py-3 font-bold text-green-600">
+                                  {formatCurrency(service.price * 0.3)}
+                                </td>
+                                <td className="px-4 py-3">{service.totalBookings}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    {service.branchNames.map(branch => (
+                                      <Badge key={branch} variant="outline" className="text-xs">
+                                        {branch}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Bookings Data */}
+                  <Card className="border-none shadow-sm rounded-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-serif flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-secondary" />
+                        Bookings & Appointment Costs ({bookings.length})
+                      </CardTitle>
+                      <CardDescription>
+                        Showing completed bookings for appointment cost calculation
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Service</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Customer</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Status</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Total Amount</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Estimated Cost (40%)</th>
+                              <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-600">Profit</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {bookings
+                              .filter(b => b.status === 'completed')
+                              .slice(0, 20) // Limit to 20 for performance
+                              .map((booking) => (
+                                <tr key={booking.id} className="hover:bg-gray-50">
+                                  <td className="px-4 py-3 font-medium">{booking.serviceName}</td>
+                                  <td className="px-4 py-3">{booking.customerName}</td>
+                                  <td className="px-4 py-3">{booking.date}</td>
+                                  <td className="px-4 py-3">
+                                    <Badge className={cn(
+                                      "rounded-full",
+                                      booking.status === 'completed' ? "bg-green-100 text-green-700" :
+                                      booking.status === 'pending' ? "bg-yellow-100 text-yellow-700" :
+                                      "bg-red-100 text-red-700"
+                                    )}>
+                                      {booking.status}
                                     </Badge>
                                   </td>
-                                  <td className="px-6 py-4 text-center">
-                                    <div className="flex items-center justify-center gap-2">
-                                      {expense.status === 'pending' && (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleApproveExpense(expense.id)}
-                                            className="border-green-200 text-green-700 hover:bg-red-50 rounded-lg"
-                                          >
-                                            Approve
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleRejectExpense(expense.id)}
-                                            className="border-red-200 text-red-700 hover:bg-red-50 rounded-lg"
-                                          >
-                                            Reject
-                                          </Button>
-                                        </>
-                                      )}
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => handleEditExpense(expense)}
-                                        className="text-secondary hover:bg-secondary/10 rounded-lg"
-                                      >
-                                        <Edit className="w-4 h-4" />
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => handleDeleteExpense(expense.id)}
-                                        className="text-red-600 hover:bg-red-50 rounded-lg"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
+                                  <td className="px-4 py-3 text-green-600 font-medium">
+                                    {formatCurrency(booking.totalAmount)}
+                                  </td>
+                                  <td className="px-4 py-3 text-purple-600 font-medium">
+                                    {formatCurrency(booking.totalAmount * 0.4)}
+                                  </td>
+                                  <td className="px-4 py-3 font-bold text-green-600">
+                                    {formatCurrency(booking.totalAmount * 0.6)}
                                   </td>
                                 </tr>
-                              ))
-                            )}
+                            ))}
                           </tbody>
                         </table>
                       </div>

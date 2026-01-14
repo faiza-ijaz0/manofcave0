@@ -11,11 +11,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Header } from '@/components/shared/Header';
 import { Eye, EyeOff, Mail, Lock, User, Phone, ArrowRight, Sparkles } from 'lucide-react';
 
+// Firebase imports
+import { db, auth } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { useAuth } from '@/contexts/AuthContext'; // UPDATED: Import useAuth
+
 export default function CustomerLogin() {
   const router = useRouter();
+  const { login: authLogin } = useAuth(); // UPDATED: Use auth context
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -32,67 +40,138 @@ export default function CustomerLogin() {
     confirmPassword: ''
   });
 
-  // Mock customer credentials
-  const mockCustomers = [
-    { email: 'john@example.com', password: 'john123', name: 'John Doe', phone: '(555) 123-4567' },
-    { email: 'mike@example.com', password: 'mike123', name: 'Mike Smith', phone: '(555) 234-5678' },
-    { email: 'customer@manofcave.com', password: 'customer123', name: 'Demo Customer', phone: '(555) 000-0000' },
-  ];
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSuccess('');
 
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    const customer = mockCustomers.find(
-      c => c.email === loginData.email && c.password === loginData.password
-    );
-
-    if (customer) {
-      // Store customer data in localStorage
-      localStorage.setItem('customerAuth', JSON.stringify({
-        isAuthenticated: true,
-        customer: {
-          email: customer.email,
-          name: customer.name,
-          phone: customer.phone
-        }
-      }));
-      router.push('/customer/portal');
-    } else {
-      setError('Invalid email or password');
+    try {
+      // Use AuthContext for login (with isCustomer = true)
+      await authLogin(loginData.email, loginData.password, true);
+      // AuthContext will handle the redirect to /customer/portal
+      
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setError(error.message || 'Invalid email or password');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSuccess('');
 
+    // Validation
     if (registerData.password !== registerData.confirmPassword) {
       setError('Passwords do not match');
       setIsLoading(false);
       return;
     }
 
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (registerData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setIsLoading(false);
+      return;
+    }
 
-    // Store new customer data
-    localStorage.setItem('customerAuth', JSON.stringify({
-      isAuthenticated: true,
-      customer: {
+    try {
+      console.log('📝 Starting registration process...');
+      
+      // Step 1: Firebase Authentication mein user create karein
+      console.log('1. Creating user in Firebase Auth...');
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        registerData.email,
+        registerData.password
+      );
+
+      const user = userCredential.user;
+      console.log('✅ Firebase Auth user created with UID:', user.uid);
+      
+      // Step 2: Firestore ke "customers" collection mein data store karein
+      // IMPORTANT: Use user.uid as document ID for consistency
+      console.log('2. Saving to Firestore...');
+      const customerData = {
+        uid: user.uid,
+        name: registerData.name,
+        email: registerData.email,
+        phone: registerData.phone,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        status: "active",
+        role: "customer",
+        emailVerified: false,
+        lastLogin: serverTimestamp()
+      };
+
+      // Use setDoc with user.uid as document ID
+      await setDoc(doc(db, "customers", user.uid), customerData);
+      console.log('✅ Customer saved to Firestore with UID:', user.uid);
+      
+      // Step 3: Also create in "users" collection for AuthContext compatibility
+      // This prevents the "User document not found" error
+      await setDoc(doc(db, "users", user.uid), {
         email: registerData.email,
         name: registerData.name,
-        phone: registerData.phone
+        role: "customer", // IMPORTANT: Set role as customer
+        createdAt: serverTimestamp(),
+        status: "active"
+      });
+      console.log('✅ User also saved to users collection');
+
+      // Step 4: Local storage mein save karein for customer portal
+      const customerObj = {
+        uid: user.uid,
+        email: registerData.email,
+        name: registerData.name,
+        phone: registerData.phone,
+        role: 'customer',
+        createdAt: new Date().toISOString()
+      };
+      
+      localStorage.setItem('customerAuth', JSON.stringify({
+        isAuthenticated: true,
+        customer: customerObj
+      }));
+      
+      localStorage.setItem('user', JSON.stringify(customerObj));
+      
+      console.log('✅ Local storage updated');
+
+      // Step 5: Auto login the user
+      console.log('3. Auto-login after registration...');
+      await signInWithEmailAndPassword(auth, registerData.email, registerData.password);
+      
+      // Success message
+      setSuccess('Account created successfully! Redirecting...');
+      
+      // Redirect to customer portal
+      setTimeout(() => {
+        router.push('/customer/portal');
+      }, 1500);
+
+    } catch (firebaseError: any) {
+      console.error("❌ Firebase Error: ", firebaseError);
+      
+      // Firebase specific error messages
+      if (firebaseError.code === 'auth/email-already-in-use') {
+        setError('This email is already registered. Please login instead.');
+      } else if (firebaseError.code === 'auth/invalid-email') {
+        setError('Invalid email address.');
+      } else if (firebaseError.code === 'auth/weak-password') {
+        setError('Password is too weak. Please use a stronger password.');
+      } else if (firebaseError.code === 'auth/network-request-failed') {
+        setError('Network error. Please check your internet connection.');
+      } else {
+        setError(`Registration failed: ${firebaseError.message}`);
       }
-    }));
-    router.push('/customer/portal');
-    setIsLoading(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -133,6 +212,12 @@ export default function CustomerLogin() {
                     {error && (
                       <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">
                         {error}
+                      </div>
+                    )}
+                    
+                    {success && (
+                      <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-xl text-sm">
+                        {success}
                       </div>
                     )}
                     
@@ -210,6 +295,14 @@ export default function CustomerLogin() {
                 </CardHeader>
                 <CardContent className="px-8 pb-8">
                   <form onSubmit={handleRegister} className="space-y-4">
+                    {/* Success Message */}
+                    {success && (
+                      <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-xl text-sm">
+                        {success}
+                      </div>
+                    )}
+                    
+                    {/* Error Message */}
                     {error && (
                       <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">
                         {error}
@@ -271,7 +364,7 @@ export default function CustomerLogin() {
                         <Input
                           id="reg-password"
                           type={showPassword ? 'text' : 'password'}
-                          placeholder="Create a password"
+                          placeholder="Create a password (min 6 characters)"
                           value={registerData.password}
                           onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
                           className="pl-11 h-12 rounded-xl border-gray-200"
@@ -293,6 +386,13 @@ export default function CustomerLogin() {
                           className="pl-11 h-12 rounded-xl border-gray-200"
                           required
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
                     </div>
 
@@ -305,6 +405,13 @@ export default function CustomerLogin() {
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </form>
+                  
+                  {/* Firebase Info Note */}
+                  <div className="mt-6 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <p className="text-xs text-gray-600">
+                      <strong>Note:</strong> Your account data will be securely stored in Firebase database.
+                    </p>
+                  </div>
                 </CardContent>
               </TabsContent>
             </Tabs>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Clock, User, Search, Filter, CheckCircle, XCircle, AlertCircle, Building, Phone, Mail, DollarSign, Loader2, RefreshCw, ChevronDown, MapPin, Shield, Check, X } from "lucide-react";
+import { Calendar, Clock, User, Search, Filter, CheckCircle, XCircle, AlertCircle, Building, Phone, Mail, DollarSign, Loader2, RefreshCw, ChevronDown, MapPin, Package, ShoppingBag, Truck, CreditCard, Home, Globe } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -31,6 +30,14 @@ import {
 import { db } from '@/lib/firebase';
 
 // ==================== TYPES ====================
+interface OrderProduct {
+  productId: string;
+  productName: string;
+  price: number;
+  quantity: number;
+  image: string;
+}
+
 interface Customer {
   uid: string;
   name: string;
@@ -45,34 +52,28 @@ interface Customer {
   lastLogin: Timestamp;
 }
 
-interface Appointment {
+interface Order {
   id: string;
   customerId: string;
   customerName: string;
   customerEmail: string;
-  serviceId: string;
-  serviceName: string;
-  servicePrice: number;
-  date: string;
-  time: string;
+  products: OrderProduct[];
   totalAmount: number;
-  status: 'pending' | 'confirmed' | 'in-progress' | 'completed' | 'cancelled' | 'no-show';
-  notes: string;
+  paymentMethod: string;
+  shippingAddress: string;
+  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
+  notes?: string;
   createdAt: Timestamp;
-  branch?: string;
-  barber?: string;
-  duration?: number;
-  phone?: string;
-  customerPhone?: string;
+  updatedAt?: Timestamp;
 }
 
 interface CustomerMap {
   [customerId: string]: Customer;
 }
 
-interface AppointmentsStore {
+interface OrdersStore {
   // Data
-  appointments: Appointment[];
+  orders: Order[];
   customers: CustomerMap;
   isLoading: boolean;
   error: string | null;
@@ -80,27 +81,27 @@ interface AppointmentsStore {
     total: number;
     pending: number;
     confirmed: number;
-    inProgress: number;
-    completed: number;
+    processing: number;
+    shipped: number;
+    delivered: number;
     cancelled: number;
-    noShow: number;
+    refunded: number;
     totalRevenue: number;
-    todayAppointments: number;
+    todayOrders: number;
     activeCustomers: number;
   };
   
   // Actions
-  fetchAppointments: () => Promise<void>;
+  fetchOrders: () => Promise<void>;
   fetchCustomers: () => Promise<void>;
-  fetchCustomerPhone: (customerId: string) => Promise<string | null>;
-  updateAppointmentStatus: (appointmentId: string, newStatus: Appointment['status']) => Promise<void>;
+  updateOrderStatus: (orderId: string, newStatus: Order['status']) => Promise<void>;
   calculateStats: () => void;
   setupRealtimeUpdates: () => () => void;
 }
 
-const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
+const useOrdersStore = create<OrdersStore>((set, get) => ({
   // Initial state
-  appointments: [],
+  orders: [],
   customers: {},
   isLoading: false,
   error: null,
@@ -108,57 +109,59 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
     total: 0,
     pending: 0,
     confirmed: 0,
-    inProgress: 0,
-    completed: 0,
+    processing: 0,
+    shipped: 0,
+    delivered: 0,
     cancelled: 0,
-    noShow: 0,
+    refunded: 0,
     totalRevenue: 0,
-    todayAppointments: 0,
+    todayOrders: 0,
     activeCustomers: 0
   },
 
-  // Fetch all appointments
-  fetchAppointments: async () => {
+  // Fetch all orders
+  fetchOrders: async () => {
     set({ isLoading: true, error: null });
     try {
-      const appointmentsRef = collection(db, 'bookings');
-      const q = query(appointmentsRef, orderBy('createdAt', 'desc'));
+      const ordersRef = collection(db, 'orders');
+      const q = query(ordersRef, orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       
-      const appointmentsData: Appointment[] = [];
+      const ordersData: Order[] = [];
       querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
         const data = doc.data();
-        appointmentsData.push({
+        ordersData.push({
           id: doc.id,
           customerId: data.customerId || '',
           customerName: data.customerName || 'Unknown Customer',
           customerEmail: data.customerEmail || 'No Email',
-          serviceId: data.serviceId || '',
-          serviceName: data.serviceName || 'Unknown Service',
-          servicePrice: Number(data.servicePrice) || 0,
-          date: data.date || 'N/A',
-          time: data.time || 'N/A',
+          products: Array.isArray(data.products) ? data.products.map((p: any) => ({
+            productId: p.productId || '',
+            productName: p.productName || 'Unknown Product',
+            price: Number(p.price) || 0,
+            quantity: Number(p.quantity) || 1,
+            image: p.image || 'https://images.unsplash.com/photo-1512690196222-7c7d3f993c1b?q=80&w=2070&auto=format&fit=crop'
+          })) : [],
           totalAmount: Number(data.totalAmount) || 0,
-          status: (data.status as Appointment['status']) || 'pending',
-          notes: data.notes || 'No notes',
+          paymentMethod: data.paymentMethod || 'Unknown',
+          shippingAddress: data.shippingAddress || '',
+          status: (data.status as Order['status']) || 'pending',
+          notes: data.notes || '',
           createdAt: data.createdAt || Timestamp.now(),
-          branch: data.branch || 'Main Branch',
-          barber: data.barber || 'Not Assigned',
-          duration: Number(data.duration) || 30,
-          phone: data.phone || data.customerPhone || null
+          updatedAt: data.updatedAt || Timestamp.now()
         });
       });
       
-      set({ appointments: appointmentsData, isLoading: false });
+      set({ orders: ordersData, isLoading: false });
       get().calculateStats();
       
-      // Fetch customers after appointments
+      // Fetch customers after orders
       await get().fetchCustomers();
       
     } catch (error) {
-      console.error('Error fetching appointments:', error);
+      console.error('Error fetching orders:', error);
       set({ 
-        error: 'Failed to load appointments. Please try again.', 
+        error: 'Failed to load orders. Please try again.', 
         isLoading: false 
       });
     }
@@ -205,60 +208,19 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
     }
   },
 
-  // Fetch specific customer phone
-  fetchCustomerPhone: async (customerId: string) => {
+  // Update order status
+  updateOrderStatus: async (orderId: string, newStatus: Order['status']) => {
     try {
-      // First check if customer exists in our local state
-      const { customers } = get();
-      const customer = customers[customerId];
-      if (customer && customer.phone) {
-        return customer.phone;
-      }
-
-      // If not in local state, fetch from Firebase
-      const customerRef = doc(db, 'customers', customerId);
-      const customerSnap = await getDoc(customerRef);
-      
-      if (customerSnap.exists()) {
-        const data = customerSnap.data();
-        const phone = data.phone || '';
-        
-        // Update local state
-        if (phone) {
-          set(state => ({
-            customers: {
-              ...state.customers,
-              [customerId]: {
-                ...state.customers[customerId],
-                phone
-              }
-            }
-          }));
-        }
-        
-        return phone;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error fetching customer phone:', error);
-      return null;
-    }
-  },
-
-  // Update appointment status
-  updateAppointmentStatus: async (appointmentId: string, newStatus: Appointment['status']) => {
-    try {
-      const appointmentRef = doc(db, 'bookings', appointmentId);
-      await updateDoc(appointmentRef, {
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
         status: newStatus,
         updatedAt: Timestamp.now()
       });
 
       // Update local state
       set(state => ({
-        appointments: state.appointments.map(apt => 
-          apt.id === appointmentId ? { ...apt, status: newStatus } : apt
+        orders: state.orders.map(order => 
+          order.id === orderId ? { ...order, status: newStatus, updatedAt: Timestamp.now() } : order
         )
       }));
 
@@ -266,7 +228,7 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
       get().calculateStats();
       
     } catch (error) {
-      console.error('Error updating appointment status:', error);
+      console.error('Error updating order status:', error);
       throw error;
     }
   },
@@ -274,22 +236,26 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
   // Calculate statistics
   calculateStats: () => {
     const state = get();
-    const appointments = state.appointments;
+    const orders = state.orders;
     
-    const total = appointments.length;
-    const pending = appointments.filter(a => a.status === 'pending').length;
-    const confirmed = appointments.filter(a => a.status === 'confirmed').length;
-    const inProgress = appointments.filter(a => a.status === 'in-progress').length;
-    const completed = appointments.filter(a => a.status === 'completed').length;
-    const cancelled = appointments.filter(a => a.status === 'cancelled').length;
-    const noShow = appointments.filter(a => a.status === 'no-show').length;
-    const totalRevenue = appointments
-      .filter(a => a.status === 'completed')
-      .reduce((sum, apt) => sum + apt.totalAmount, 0);
+    const total = orders.length;
+    const pending = orders.filter(o => o.status === 'pending').length;
+    const confirmed = orders.filter(o => o.status === 'confirmed').length;
+    const processing = orders.filter(o => o.status === 'processing').length;
+    const shipped = orders.filter(o => o.status === 'shipped').length;
+    const delivered = orders.filter(o => o.status === 'delivered').length;
+    const cancelled = orders.filter(o => o.status === 'cancelled').length;
+    const refunded = orders.filter(o => o.status === 'refunded').length;
+    const totalRevenue = orders
+      .filter(o => o.status === 'delivered')
+      .reduce((sum, order) => sum + order.totalAmount, 0);
     
-    // Calculate today's appointments
+    // Calculate today's orders
     const today = new Date().toISOString().split('T')[0];
-    const todayAppointments = appointments.filter(a => a.date === today).length;
+    const todayOrders = orders.filter(o => {
+      const orderDate = o.createdAt.toDate().toISOString().split('T')[0];
+      return orderDate === today;
+    }).length;
 
     set({
       stats: {
@@ -297,12 +263,13 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
         total,
         pending,
         confirmed,
-        inProgress,
-        completed,
+        processing,
+        shipped,
+        delivered,
         cancelled,
-        noShow,
+        refunded,
         totalRevenue,
-        todayAppointments
+        todayOrders
       }
     });
   },
@@ -310,35 +277,36 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
   // Setup real-time updates
   setupRealtimeUpdates: () => {
     try {
-      const appointmentsRef = collection(db, 'bookings');
-      const q = query(appointmentsRef, orderBy('createdAt', 'desc'));
+      const ordersRef = collection(db, 'orders');
+      const q = query(ordersRef, orderBy('createdAt', 'desc'));
       
       const unsubscribe = onSnapshot(q, async (querySnapshot) => {
-        const appointmentsData: Appointment[] = [];
+        const ordersData: Order[] = [];
         querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
           const data = doc.data();
-          appointmentsData.push({
+          ordersData.push({
             id: doc.id,
             customerId: data.customerId || '',
             customerName: data.customerName || 'Unknown Customer',
             customerEmail: data.customerEmail || 'No Email',
-            serviceId: data.serviceId || '',
-            serviceName: data.serviceName || 'Unknown Service',
-            servicePrice: Number(data.servicePrice) || 0,
-            date: data.date || 'N/A',
-            time: data.time || 'N/A',
+            products: Array.isArray(data.products) ? data.products.map((p: any) => ({
+              productId: p.productId || '',
+              productName: p.productName || 'Unknown Product',
+              price: Number(p.price) || 0,
+              quantity: Number(p.quantity) || 1,
+              image: p.image || 'https://images.unsplash.com/photo-1512690196222-7c7d3f993c1b?q=80&w=2070&auto=format&fit=crop'
+            })) : [],
             totalAmount: Number(data.totalAmount) || 0,
-            status: (data.status as Appointment['status']) || 'pending',
-            notes: data.notes || 'No notes',
+            paymentMethod: data.paymentMethod || 'Unknown',
+            shippingAddress: data.shippingAddress || '',
+            status: (data.status as Order['status']) || 'pending',
+            notes: data.notes || '',
             createdAt: data.createdAt || Timestamp.now(),
-            branch: data.branch || 'Main Branch',
-            barber: data.barber || 'Not Assigned',
-            duration: Number(data.duration) || 30,
-            phone: data.phone || data.customerPhone || null
+            updatedAt: data.updatedAt || Timestamp.now()
           });
         });
         
-        set({ appointments: appointmentsData });
+        set({ orders: ordersData });
         get().calculateStats();
         
         // Refresh customers data
@@ -356,56 +324,58 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
 }));
 
 // ==================== MAIN COMPONENT ====================
-export default function SuperAdminAppointments() {
+export default function SuperAdminOrders() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Sidebar by default open
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [branchFilter, setBranchFilter] = useState('all');
+  const [paymentFilter, setPaymentFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>('');
 
   const { 
-    appointments, 
+    orders, 
     customers,
     isLoading, 
     error, 
     stats,
-    fetchAppointments, 
-    updateAppointmentStatus,
-    fetchCustomerPhone
-  } = useAppointmentsStore();
+    fetchOrders, 
+    updateOrderStatus
+  } = useOrdersStore();
 
-  // Fetch data on mount and setup real-time updates
+  // Fetch data on mount
   useEffect(() => {
-    fetchAppointments();
-  }, [fetchAppointments]);
+    fetchOrders();
+  }, [fetchOrders]);
 
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
 
-  // Get unique branches from appointments
-  const branches = Array.from(new Set(appointments.map(apt => apt.branch || 'Main Branch')));
-
-  // Filter appointments
-  const filteredAppointments = appointments.filter(appointment => {
-    const customerPhone = customers[appointment.customerId]?.phone || '';
+  // Filter orders
+  const filteredOrders = orders.filter(order => {
+    const customer = customers[order.customerId];
+    const customerPhone = customer?.phone || '';
     
     const matchesSearch = 
-      appointment.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.customerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.customerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
       customerPhone.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.phone?.toLowerCase().includes(searchQuery.toLowerCase());
+      order.products.some(p => 
+        p.productName.toLowerCase().includes(searchQuery.toLowerCase())
+      );
     
-    const matchesStatus = statusFilter === 'all' || appointment.status === statusFilter;
-    const matchesBranch = branchFilter === 'all' || appointment.branch === branchFilter;
-    const matchesDate = !selectedDate || appointment.date === selectedDate;
+    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+    const matchesPayment = paymentFilter === 'all' || order.paymentMethod === paymentFilter;
+    const matchesDate = !selectedDate || 
+      order.createdAt.toDate().toISOString().split('T')[0] === selectedDate;
 
-    return matchesSearch && matchesStatus && matchesBranch && matchesDate;
+    return matchesSearch && matchesStatus && matchesPayment && matchesDate;
   });
+
+  // Get unique payment methods
+  const paymentMethods = Array.from(new Set(orders.map(order => order.paymentMethod)));
 
   // Status configuration
   const statusConfig = {
@@ -413,37 +383,50 @@ export default function SuperAdminAppointments() {
       label: 'Pending', 
       color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
       icon: AlertCircle,
-      badgeColor: 'bg-yellow-500'
+      badgeColor: 'bg-yellow-500',
+      description: 'Order received, waiting for confirmation'
     },
     confirmed: { 
       label: 'Confirmed', 
       color: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
       icon: CheckCircle,
-      badgeColor: 'bg-blue-500'
+      badgeColor: 'bg-blue-500',
+      description: 'Order confirmed, preparing for processing'
     },
-    'in-progress': { 
-      label: 'In Progress', 
+    processing: { 
+      label: 'Processing', 
       color: 'bg-purple-100 text-purple-800 hover:bg-purple-100',
-      icon: Clock,
-      badgeColor: 'bg-purple-500'
+      icon: Package,
+      badgeColor: 'bg-purple-500',
+      description: 'Order is being processed'
     },
-    completed: { 
-      label: 'Completed', 
+    shipped: { 
+      label: 'Shipped', 
+      color: 'bg-indigo-100 text-indigo-800 hover:bg-indigo-100',
+      icon: Truck,
+      badgeColor: 'bg-indigo-500',
+      description: 'Order has been shipped'
+    },
+    delivered: { 
+      label: 'Delivered', 
       color: 'bg-green-100 text-green-800 hover:bg-green-100',
       icon: CheckCircle,
-      badgeColor: 'bg-green-500'
+      badgeColor: 'bg-green-500',
+      description: 'Order delivered successfully'
     },
     cancelled: { 
       label: 'Cancelled', 
       color: 'bg-red-100 text-red-800 hover:bg-red-100',
       icon: XCircle,
-      badgeColor: 'bg-red-500'
+      badgeColor: 'bg-red-500',
+      description: 'Order has been cancelled'
     },
-    'no-show': { 
-      label: 'No Show', 
+    refunded: { 
+      label: 'Refunded', 
       color: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
-      icon: XCircle,
-      badgeColor: 'bg-gray-500'
+      icon: DollarSign,
+      badgeColor: 'bg-gray-500',
+      description: 'Order has been refunded'
     }
   };
 
@@ -451,45 +434,46 @@ export default function SuperAdminAppointments() {
   const statusOptions = [
     { value: 'pending', label: 'Pending' },
     { value: 'confirmed', label: 'Confirmed' },
-    { value: 'in-progress', label: 'In Progress' },
-    { value: 'completed', label: 'Completed' },
+    { value: 'processing', label: 'Processing' },
+    { value: 'shipped', label: 'Shipped' },
+    { value: 'delivered', label: 'Delivered' },
     { value: 'cancelled', label: 'Cancelled' },
-    { value: 'no-show', label: 'No Show' }
+    { value: 'refunded', label: 'Refunded' }
   ];
 
-  const handleStatusChange = async (appointmentId: string, newStatus: Appointment['status']) => {
-    try {
-      await updateAppointmentStatus(appointmentId, newStatus);
-    } catch (error) {
-      alert('Failed to update appointment status. Please try again.');
-    }
+  // Payment method icons
+  const paymentIcons = {
+    wallet: DollarSign,
+    cash: DollarSign,
+    card: CreditCard,
+    credit: CreditCard,
+    debit: CreditCard,
+    online: Globe
   };
 
-  // Function to get phone number with fallback
-  const getCustomerPhone = (customerId: string, appointment: Appointment) => {
-    // First check customer data
-    const customer = customers[customerId];
-    if (customer && customer.phone) {
-      return customer.phone;
+  const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
+    try {
+      await updateOrderStatus(orderId, newStatus);
+    } catch (error) {
+      alert('Failed to update order status. Please try again.');
     }
-    
-    // Check appointment data
-    if (appointment.phone) {
-      return appointment.phone;
-    }
-    
-    // Check customerPhone field
-    if (appointment.customerPhone) {
-      return appointment.customerPhone;
-    }
-    
-    return 'N/A';
   };
 
   // Function to get customer details
   const getCustomerDetails = (customerId: string) => {
     const customer = customers[customerId];
     return customer || null;
+  };
+
+  // Function to get payment method icon
+  const getPaymentIcon = (method: string) => {
+    const normalizedMethod = method.toLowerCase();
+    for (const [key, Icon] of Object.entries(paymentIcons)) {
+      if (normalizedMethod.includes(key)) {
+        return Icon;
+      }
+    }
+    return CreditCard;
   };
 
   // Get today's date for the date picker
@@ -501,7 +485,7 @@ export default function SuperAdminAppointments() {
         <div className="flex h-screen bg-gray-50 items-center justify-center">
           <div className="text-center space-y-4">
             <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
-            <p className="text-lg font-semibold text-primary">Loading appointments...</p>
+            <p className="text-lg font-semibold text-primary">Loading orders...</p>
             <p className="text-sm text-gray-500">Fetching real-time data from Firebase</p>
           </div>
         </div>
@@ -518,7 +502,7 @@ export default function SuperAdminAppointments() {
           onLogout={handleLogout}
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
-          className ={cn(
+          className={cn(
             "hidden lg:block transition-all duration-300",
             sidebarOpen ? "w-64" : "w-0"
           )}
@@ -559,13 +543,13 @@ export default function SuperAdminAppointments() {
                 </button>
                 
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">All Appointments</h1>
-                  <p className="text-sm text-gray-600">Manage appointments across all branches (Real-time Firebase Data)</p>
+                  <h1 className="text-2xl font-bold text-gray-900">All Orders</h1>
+                  <p className="text-sm text-gray-600">Manage product orders across all customers (Real-time Firebase Data)</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <Button 
-                  onClick={fetchAppointments}
+                  onClick={fetchOrders}
                   variant="outline" 
                   className="gap-2"
                   disabled={isLoading}
@@ -590,13 +574,13 @@ export default function SuperAdminAppointments() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Appointments</CardTitle>
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
+                    <ShoppingBag className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{stats.total}</div>
                     <p className="text-xs text-muted-foreground">
-                      Across all branches
+                      Across all customers
                     </p>
                   </CardContent>
                 </Card>
@@ -616,13 +600,13 @@ export default function SuperAdminAppointments() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Today's Appointments</CardTitle>
-                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium">Today's Orders</CardTitle>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{stats.todayAppointments}</div>
+                    <div className="text-2xl font-bold">{stats.todayOrders}</div>
                     <p className="text-xs text-muted-foreground">
-                      Scheduled for today
+                      Placed today
                     </p>
                   </CardContent>
                 </Card>
@@ -635,38 +619,30 @@ export default function SuperAdminAppointments() {
                   <CardContent>
                     <div className="text-2xl font-bold">${stats.totalRevenue}</div>
                     <p className="text-xs text-muted-foreground">
-                      From completed appointments
+                      From delivered orders
                     </p>
                   </CardContent>
                 </Card>
               </div>
 
               {/* Detailed Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
-                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
-                  <div className="text-2xl font-bold text-yellow-700">{stats.pending}</div>
-                  <div className="text-sm text-yellow-600 font-medium">Pending</div>
-                </div>
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                  <div className="text-2xl font-bold text-blue-700">{stats.confirmed}</div>
-                  <div className="text-sm text-blue-600 font-medium">Confirmed</div>
-                </div>
-                <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
-                  <div className="text-2xl font-bold text-purple-700">{stats.inProgress}</div>
-                  <div className="text-sm text-purple-600 font-medium">In Progress</div>
-                </div>
-                <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                  <div className="text-2xl font-bold text-green-700">{stats.completed}</div>
-                  <div className="text-sm text-green-600 font-medium">Completed</div>
-                </div>
-                <div className="bg-red-50 p-4 rounded-lg border border-red-100">
-                  <div className="text-2xl font-bold text-red-700">{stats.cancelled}</div>
-                  <div className="text-sm text-red-600 font-medium">Cancelled</div>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                  <div className="text-2xl font-bold text-gray-700">{stats.noShow}</div>
-                  <div className="text-sm text-gray-600 font-medium">No Show</div>
-                </div>
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-8">
+                {Object.entries(statusConfig).map(([status, config]) => (
+                  <div 
+                    key={status} 
+                    className={cn(
+                      "p-4 rounded-lg border",
+                      config.color.replace('hover:bg-', 'bg-').split(' ')[0]
+                    )}
+                  >
+                    <div className="text-2xl font-bold">
+                      {stats[status as keyof typeof stats] || 0}
+                    </div>
+                    <div className="text-sm font-medium">
+                      {config.label}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {/* Filters */}
@@ -677,7 +653,7 @@ export default function SuperAdminAppointments() {
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                         <Input
-                          placeholder="Search by customer, service, email or phone..."
+                          placeholder="Search by customer, email, phone or product..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           className="pl-10"
@@ -713,15 +689,23 @@ export default function SuperAdminAppointments() {
                       </SelectContent>
                     </Select>
                     
-                    <Select value={branchFilter} onValueChange={setBranchFilter}>
+                    <Select value={paymentFilter} onValueChange={setPaymentFilter}>
                       <SelectTrigger className="w-full sm:w-48">
-                        <SelectValue placeholder="Filter by branch" />
+                        <SelectValue placeholder="Filter by payment" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Branches</SelectItem>
-                        {branches.map(branch => (
-                          <SelectItem key={branch} value={branch}>{branch}</SelectItem>
-                        ))}
+                        <SelectItem value="all">All Payments</SelectItem>
+                        {paymentMethods.map(method => {
+                          const PaymentIcon = getPaymentIcon(method);
+                          return (
+                            <SelectItem key={method} value={method}>
+                              <div className="flex items-center gap-2">
+                                <PaymentIcon className="w-4 h-4" />
+                                {method.charAt(0).toUpperCase() + method.slice(1)}
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
@@ -736,10 +720,10 @@ export default function SuperAdminAppointments() {
                         </button>
                       </Badge>
                     )}
-                    {branchFilter !== 'all' && (
+                    {paymentFilter !== 'all' && (
                       <Badge variant="outline" className="gap-2">
-                        Branch: {branchFilter}
-                        <button onClick={() => setBranchFilter('all')} className="text-gray-400 hover:text-gray-600">
+                        Payment: {paymentFilter}
+                        <button onClick={() => setPaymentFilter('all')} className="text-gray-400 hover:text-gray-600">
                           ×
                         </button>
                       </Badge>
@@ -760,13 +744,13 @@ export default function SuperAdminAppointments() {
                         </button>
                       </Badge>
                     )}
-                    {(statusFilter !== 'all' || branchFilter !== 'all' || selectedDate || searchQuery) && (
+                    {(statusFilter !== 'all' || paymentFilter !== 'all' || selectedDate || searchQuery) && (
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         onClick={() => {
                           setStatusFilter('all');
-                          setBranchFilter('all');
+                          setPaymentFilter('all');
                           setSelectedDate('');
                           setSearchQuery('');
                         }}
@@ -779,43 +763,37 @@ export default function SuperAdminAppointments() {
                 </CardContent>
               </Card>
 
-              {/* Appointments List */}
+              {/* Orders List */}
               <div className="space-y-4">
-                {filteredAppointments.map((appointment) => {
-                  const status = statusConfig[appointment.status];
+                {filteredOrders.map((order) => {
+                  const status = statusConfig[order.status];
                   const StatusIcon = status?.icon || AlertCircle;
-                  const customer = getCustomerDetails(appointment.customerId);
-                  const customerPhone = getCustomerPhone(appointment.customerId, appointment);
+                  const customer = getCustomerDetails(order.customerId);
+                  const PaymentIcon = getPaymentIcon(order.paymentMethod);
                   
                   return (
-                    <Card key={appointment.id} className="hover:shadow-md transition-shadow">
+                    <Card key={order.id} className="hover:shadow-md transition-shadow">
                       <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                          {/* Appointment Details */}
+                        {/* Order Header */}
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+                          {/* Order Info */}
                           <div className="flex items-start gap-4 flex-1">
-                            {/* Time/Date */}
-                            <div className="text-center min-w-[80px]">
-                              <div className="text-lg font-bold text-primary">{appointment.time}</div>
-                              <div className="text-sm text-gray-500">{appointment.date}</div>
-                              <Badge variant="outline" className="mt-2 text-xs">
-                                ${appointment.totalAmount}
-                              </Badge>
+                            {/* Order ID & Date */}
+                            <div className="text-center min-w-[100px]">
+                              <div className="text-sm font-medium text-gray-500">Order ID</div>
+                              <div className="text-lg font-bold text-primary truncate">
+                                #{order.id.substring(0, 8)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {order.createdAt?.toDate?.().toLocaleDateString() || 'N/A'}
+                              </div>
                             </div>
                             
-                            {/* Customer & Service Details */}
+                            {/* Customer Details */}
                             <div className="border-l pl-4 flex-1">
-                              {/* Branch */}
-                              <div className="flex items-center gap-2 mb-2">
-                                <Building className="w-4 h-4 text-gray-400" />
-                                <span className="text-sm font-medium text-secondary">
-                                  {appointment.branch || 'Main Branch'}
-                                </span>
-                              </div>
-                              
-                              {/* Customer Name with Status */}
                               <div className="flex items-center gap-3 mb-2">
                                 <h3 className="font-semibold text-gray-900 text-lg">
-                                  {appointment.customerName}
+                                  {order.customerName}
                                 </h3>
                                 {customer && (
                                   <Badge className={cn(
@@ -824,102 +802,169 @@ export default function SuperAdminAppointments() {
                                       ? 'bg-green-100 text-green-800' 
                                       : 'bg-red-100 text-red-800'
                                   )}>
-                                    {customer.status === 'active' ? (
-                                      <Check className="w-3 h-3 mr-1" />
-                                    ) : (
-                                      <X className="w-3 h-3 mr-1" />
-                                    )}
                                     {customer.status}
                                   </Badge>
                                 )}
                               </div>
                               
-                              {/* Service Details */}
-                              <p className="text-sm text-gray-600 mb-2">
-                                {appointment.serviceName} • ${appointment.servicePrice}
-                                {appointment.duration && ` • ${appointment.duration} min`}
-                              </p>
-                              
-                              {/* Contact Info */}
-                              <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
+                              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
                                 {/* Email */}
                                 <div className="flex items-center gap-1">
                                   <Mail className="w-3 h-3" />
                                   <span className="truncate max-w-[200px]">
-                                    {appointment.customerEmail}
+                                    {order.customerEmail}
                                   </span>
                                 </div>
                                 
-                                {/* Phone - Always Show */}
-                                <div className="flex items-center gap-1">
-                                  <Phone className="w-3 h-3" />
-                                  <span className="font-medium">
-                                    {customerPhone}
-                                  </span>
-                                </div>
-                                
-                                {/* Address if available */}
-                                {customer?.address && (
+                                {/* Phone */}
+                                {customer?.phone && (
                                   <div className="flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" />
-                                    <span className="truncate max-w-[150px]">
-                                      {customer.address}
+                                    <Phone className="w-3 h-3" />
+                                    <span className="font-medium">
+                                      {customer.phone}
                                     </span>
                                   </div>
                                 )}
                                 
-                                {/* Barber */}
-                                {appointment.barber && (
-                                  <div className="flex items-center gap-1">
-                                    <User className="w-3 h-3" />
-                                    <span>{appointment.barber}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Customer Additional Info */}
-                              {customer && (
-                                <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                                  <div className="flex flex-wrap gap-3">
-                                    {customer.city && (
-                                      <span>City: {customer.city}</span>
-                                    )}
-                                    {customer.country && (
-                                      <span>Country: {customer.country}</span>
-                                    )}
-                                    {customer.role && (
-                                      <span>Role: {customer.role}</span>
-                                    )}
-                                    {customer.lastLogin && (
-                                      <span>
-                                        Last Login: {customer.lastLogin.toDate().toLocaleDateString()}
-                                      </span>
-                                    )}
-                                  </div>
+                                {/* Payment Method */}
+                                <div className="flex items-center gap-1">
+                                  <PaymentIcon className="w-3 h-3" />
+                                  <span>
+                                    {order.paymentMethod}
+                                  </span>
                                 </div>
-                              )}
+                              </div>
                             </div>
                           </div>
 
-                          {/* Status & Actions */}
+                          {/* Status & Amount */}
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 min-w-[250px]">
+                            {/* Amount */}
+                            <div className="text-right">
+                              <div className="text-2xl font-bold text-primary">
+                                ${order.totalAmount}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {order.products.length} item{order.products.length !== 1 ? 's' : ''}
+                              </div>
+                            </div>
+
                             {/* Status Badge */}
                             <Badge className={cn(
                               "gap-2 px-3 py-1.5 font-medium min-w-[120px] justify-center",
                               status?.color
                             )}>
                               <StatusIcon className="w-4 h-4" />
-                              <span>{status?.label || appointment.status}</span>
+                              <span>{status?.label || order.status}</span>
                             </Badge>
+                          </div>
+                        </div>
 
+                        {/* Products List */}
+                        <div className="border-t pt-6">
+                          <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                            <Package className="w-4 h-4" />
+                            Products ({order.products.length})
+                          </h4>
+                          
+                          <div className="space-y-3">
+                            {order.products.map((product, index) => (
+                              <div 
+                                key={`${product.productId}-${index}`}
+                                className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg"
+                              >
+                                {/* Product Image */}
+                                <div className="w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
+                                  <img 
+                                    src={product.image} 
+                                    alt={product.productName}
+                                    className="w-full h-full object-cover"
+                                    onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                                      e.currentTarget.src = 'https://images.unsplash.com/photo-1512690196222-7c7d3f993c1b?q=80&w=2070&auto=format&fit=crop';
+                                    }}
+                                  />
+                                </div>
+                                
+                                {/* Product Details */}
+                                <div className="flex-1 min-w-0">
+                                  <h5 className="font-medium text-gray-900 truncate">
+                                    {product.productName}
+                                  </h5>
+                                  <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
+                                    <span>Price: ${product.price}</span>
+                                    <span>Quantity: {product.quantity}</span>
+                                    <span>Total: ${product.price * product.quantity}</span>
+                                  </div>
+                                </div>
+                                
+                                {/* Product ID */}
+                                <div className="text-xs text-gray-400">
+                                  ID: {product.productId.substring(0, 8)}...
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Shipping & Notes */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t">
+                          {/* Shipping Address */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                              <Home className="w-4 h-4" />
+                              Shipping Address
+                            </h4>
+                            <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                              {order.shippingAddress ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="w-3 h-3" />
+                                    <span>{order.shippingAddress}</span>
+                                  </div>
+                                  {customer && (
+                                    <>
+                                      {customer.address && (
+                                        <div>Primary: {customer.address}</div>
+                                      )}
+                                      {customer.city && customer.country && (
+                                        <div>{customer.city}, {customer.country}</div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              ) : customer?.address ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="w-3 h-3" />
+                                    <span>{customer.address}</span>
+                                  </div>
+                                  {customer.city && customer.country && (
+                                    <div>{customer.city}, {customer.country}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-gray-400 italic">No shipping address provided</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Status Control & Notes */}
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-gray-900">Order Status Control</h4>
+                              <div className="text-xs text-gray-500">
+                                Updated: {order.updatedAt?.toDate?.().toLocaleDateString() || 'N/A'}
+                              </div>
+                            </div>
+                            
                             {/* Status Dropdown */}
                             <Select
-                              value={appointment.status}
+                              value={order.status}
                               onValueChange={(value) => 
-                                handleStatusChange(appointment.id, value as Appointment['status'])
+                                handleStatusChange(order.id, value as Order['status'])
                               }
                             >
-                              <SelectTrigger className="w-[180px]">
+                              <SelectTrigger className="w-full mb-4">
                                 <div className="flex items-center gap-2">
                                   <div className={`w-2 h-2 rounded-full ${status?.badgeColor}`}></div>
                                   <span>Change Status</span>
@@ -938,33 +983,43 @@ export default function SuperAdminAppointments() {
                                       className="flex items-center gap-2"
                                     >
                                       <OptionIcon className="w-4 h-4" />
-                                      {option.label}
+                                      <div>
+                                        <div>{option.label}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {optionStatus.description}
+                                        </div>
+                                      </div>
                                     </SelectItem>
                                   );
                                 })}
                               </SelectContent>
                             </Select>
+
+                            {/* Notes */}
+                            {order.notes && (
+                              <div className="mt-4">
+                                <h4 className="font-semibold text-gray-900 mb-2">Order Notes</h4>
+                                <div className="text-sm text-gray-600 bg-yellow-50 p-3 rounded-lg border border-yellow-100">
+                                  {order.notes}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 
-                        {/* Notes */}
-                        {appointment.notes && (
-                          <div className="mt-4 pt-4 border-t">
-                            <p className="text-sm text-gray-600">
-                              <strong className="font-medium">Notes:</strong> {appointment.notes}
-                            </p>
-                          </div>
-                        )}
-
                         {/* Technical Info */}
-                        <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                        <div className="mt-6 pt-6 border-t border-gray-100 text-xs text-gray-500">
                           <div className="flex flex-wrap gap-4">
-                            <span>Appointment ID: <code className="bg-gray-100 px-2 py-0.5 rounded">{appointment.id.substring(0, 8)}...</code></span>
-                            <span>Customer ID: <code className="bg-gray-100 px-2 py-0.5 rounded">{appointment.customerId.substring(0, 8)}...</code></span>
-                            <span>Service ID: <code className="bg-gray-100 px-2 py-0.5 rounded">{appointment.serviceId.substring(0, 8)}...</code></span>
+                            <span>Order ID: <code className="bg-gray-100 px-2 py-0.5 rounded">{order.id.substring(0, 8)}...</code></span>
+                            <span>Customer ID: <code className="bg-gray-100 px-2 py-0.5 rounded">{order.customerId.substring(0, 8)}...</code></span>
                             <span>
-                              Created: {appointment.createdAt?.toDate?.().toLocaleDateString() || 'N/A'}
+                              Created: {order.createdAt?.toDate?.().toLocaleString() || 'N/A'}
                             </span>
+                            {order.updatedAt && (
+                              <span>
+                                Last Updated: {order.updatedAt?.toDate?.().toLocaleString()}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </CardContent>
@@ -974,16 +1029,16 @@ export default function SuperAdminAppointments() {
               </div>
 
               {/* No Results */}
-              {filteredAppointments.length === 0 && (
+              {filteredOrders.length === 0 && (
                 <div className="text-center py-12">
-                  <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No appointments found</h3>
+                  <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No orders found</h3>
                   <p className="text-gray-600 mb-4">Try adjusting your search or filter criteria.</p>
                   <Button 
                     variant="outline" 
                     onClick={() => {
                       setStatusFilter('all');
-                      setBranchFilter('all');
+                      setPaymentFilter('all');
                       setSelectedDate('');
                       setSearchQuery('');
                     }}
@@ -1000,12 +1055,12 @@ export default function SuperAdminAppointments() {
                     <div className="flex items-center gap-3 text-red-700">
                       <AlertCircle className="w-5 h-5" />
                       <div>
-                        <p className="font-medium">Error loading appointments</p>
+                        <p className="font-medium">Error loading orders</p>
                         <p className="text-sm mt-1">{error}</p>
                       </div>
                     </div>
                     <Button 
-                      onClick={fetchAppointments} 
+                      onClick={fetchOrders} 
                       variant="outline" 
                       className="mt-4 border-red-300 text-red-700 hover:bg-red-100"
                     >
@@ -1020,10 +1075,10 @@ export default function SuperAdminAppointments() {
               <div className="mt-6 text-sm text-gray-500">
                 <div className="flex items-center justify-between">
                   <div>
-                    Showing {filteredAppointments.length} of {appointments.length} total appointments
+                    Showing {filteredOrders.length} of {orders.length} total orders
                   </div>
                   <div className="text-xs text-gray-400">
-                    {Object.keys(customers).length} customers loaded from Firebase
+                    {Object.keys(customers).length} customers • ${stats.totalRevenue} total revenue
                   </div>
                 </div>
               </div>

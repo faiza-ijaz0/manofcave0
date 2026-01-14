@@ -47,6 +47,7 @@ interface SidebarProps {
   onLogout: () => void;
   isOpen?: boolean;
   onToggle?: () => void;
+  className?:string;
 }
 
 const branchAdminNavItems = [
@@ -154,16 +155,31 @@ const superAdminNavItems = [
     icon: Award,
   },
   {
+    title: 'Users',
+    href: '/super-admin/users',
+    icon: Award,
+  },
+  {
     title: 'All Appointments',
     href: '/super-admin/appointments',
     icon: Calendar,
   },
-  
- {
-    title: 'Analytics',
-    href: '/super-admin/analytics',
-    icon: PieChart,
+   {
+    title: 'All Orders',
+    href: '/super-admin/orders',
+    icon: Calendar,
   },
+  {
+    title: 'All Feedback',
+    href: '/super-admin/feedback',
+    icon: Calendar,
+  },
+  
+//  {
+//     title: 'Analytics',
+//     href: '/super-admin/analytics',
+//     icon: PieChart,
+//   },
   {
     title: 'Expenses',
     href: '/super-admin/expenses',
@@ -193,11 +209,11 @@ const superAdminNavItems = [
   },
   
   
-  {
-    title: 'Settings',
-    href: '/super-admin/settings',
-    icon: Settings,
-  },
+  // {
+  //   title: 'Settings',
+  //   href: '/super-admin/settings',
+  //   icon: Settings,
+  // },
 ];
 
 function SidebarContent({ role, onLogout, onToggle, isCollapsed = false }: Omit<SidebarProps, 'isOpen'> & { isCollapsed?: boolean }) {
@@ -219,28 +235,7 @@ function SidebarContent({ role, onLogout, onToggle, isCollapsed = false }: Omit<
               </span>
             )}
           </Link>
-          <div className="flex items-center gap-2">
-            {onToggle && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggle}
-                className="lg:hidden"
-              >
-                <XCircle className="h-5 w-5" />
-              </Button>
-            )}
-            {onToggle && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggle}
-                className="hidden lg:flex"
-              >
-                {isCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-              </Button>
-            )}
-          </div>
+        
         </div>
       </div>
 
