@@ -203,6 +203,17 @@ const superAdminNavItems = [
     icon: DollarSign,
   },
   {
+    title: 'Booking Calender',
+    href: '/super-admin/bookingcalender',
+    icon: DollarSign,
+  },
+ {
+    title: '  Custom Invoice Generator',
+    href: '/super-admin/custom-invoice',
+    icon: DollarSign,
+  },
+
+  {
     title: 'Financial',
     href: '/super-admin/financial',
     icon: DollarSign,
