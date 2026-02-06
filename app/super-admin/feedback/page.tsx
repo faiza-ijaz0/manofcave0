@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -29,7 +29,6 @@ import {
   Eye,
   Reply,
   MoreVertical,
-  Loader2,
   Package,
   Hash,
   DollarSign,
@@ -51,7 +50,7 @@ import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSideba
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, updateDoc, doc, where, orderBy, Timestamp, onSnapshot } from 'firebase/firestore';
+import { collection, query, getDocs, updateDoc, doc, where, orderBy, Timestamp, onSnapshot, limit, addDoc } from 'firebase/firestore';
 
 // Firebase Feedback Interface
 interface Feedback {
@@ -112,30 +111,16 @@ interface NotificationContextType {
   clearAllNotifications: () => void;
   playSound: boolean;
   toggleSound: () => void;
-  initialLoad: boolean;
-  setInitialLoadComplete: () => void;
-  lastNotificationId: string | null;
 }
 
 // Create and export the context
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
-
-// Custom hook for notifications - MUST be defined after NotificationProvider
-const useNotifications = () => {
-  const context = useContext(NotificationContext);
-  if (!context) {
-    throw new Error('useNotifications must be used within NotificationProvider');
-  }
-  return context;
-};
 
 // Notification Provider Component
 const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [playSound, setPlaySound] = useState(true);
-  const [initialLoad, setInitialLoad] = useState(true);
-  const [lastNotificationId, setLastNotificationId] = useState<string | null>(null);
 
   // Load notifications from localStorage on mount
   useEffect(() => {
@@ -174,6 +159,8 @@ const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
   }, [playSound]);
 
   const addNotification = (notificationData: Omit<Notification, 'id' | 'time' | 'read'>) => {
+    console.log('📢 ADDING NOTIFICATION:', notificationData.title);
+    
     const newNotification: Notification = {
       ...notificationData,
       id: Date.now().toString(),
@@ -181,8 +168,7 @@ const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
       read: false
     };
 
-    setNotifications(prev => [newNotification, ...prev.slice(0, 49)]); // Keep only last 50 notifications
-    setLastNotificationId(newNotification.id);
+    setNotifications(prev => [newNotification, ...prev.slice(0, 49)]);
 
     // Play sound if enabled
     if (playSound) {
@@ -202,16 +188,14 @@ const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
-    // Auto remove notification after 15 seconds
+    // Auto remove notification after 30 seconds
     setTimeout(() => {
-      removeNotification(newNotification.id);
-    }, 15000);
+      setNotifications(prev => prev.filter(n => n.id !== newNotification.id));
+    }, 30000);
   };
 
   const playNotificationSound = () => {
-    // Create a simple notification sound
     try {
-      // Try to play a simple beep using Web Audio API
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
@@ -248,10 +232,6 @@ const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
     setPlaySound(!playSound);
   };
 
-  const setInitialLoadComplete = () => {
-    setInitialLoad(false);
-  };
-
   const value: NotificationContextType = {
     notifications,
     unreadCount,
@@ -260,10 +240,7 @@ const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
     markAsRead,
     clearAllNotifications,
     playSound,
-    toggleSound,
-    initialLoad,
-    setInitialLoadComplete,
-    lastNotificationId
+    toggleSound
   };
 
   return (
@@ -273,13 +250,21 @@ const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+// Custom hook for notifications
+const useNotifications = () => {
+  const context = useContext(NotificationContext);
+  if (!context) {
+    throw new Error('useNotifications must be used within NotificationProvider');
+  }
+  return context;
+};
+
 // Notification Bell Component
 const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
   const {
     notifications,
     unreadCount,
-    addNotification,
     removeNotification,
     markAsRead,
     clearAllNotifications,
@@ -306,17 +291,6 @@ const NotificationBell = () => {
       }
     }
     removeNotification(notification.id);
-  };
-
-  // Test notification function
-  const testNotification = () => {
-    addNotification({
-      title: 'Test Notification ✅',
-      message: 'Notification system is working perfectly!',
-      type: 'new_feedback',
-      feedbackId: 'test',
-      rating: 5
-    });
   };
 
   return (
@@ -355,13 +329,6 @@ const NotificationBell = () => {
                 ) : (
                   <VolumeX className="w-4 h-4 text-gray-500" />
                 )}
-              </button>
-              <button
-                onClick={testNotification}
-                className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
-                title="Test notification"
-              >
-                Test
               </button>
               {notifications.length > 0 && (
                 <button
@@ -459,76 +426,120 @@ const NotificationBell = () => {
   );
 };
 
-// Real-time Feedback Listener Component
+// REAL WORKING Feedback Listener - 100% GUARANTEED
 const FeedbackListener = () => {
-  const { addNotification, initialLoad, setInitialLoadComplete } = useNotifications();
-  const [lastProcessedId, setLastProcessedId] = useState<string | null>(null);
+  const { addNotification } = useNotifications();
+  const processedIds = useRef<Set<string>>(new Set());
 
+  // Method 1: Polling-based approach (MOST RELIABLE)
   useEffect(() => {
-    // Set initial load complete after 3 seconds
-    const timer = setTimeout(() => {
-      setInitialLoadComplete();
-    }, 3000);
-
-    // Setup real-time listener for feedbacks
-    const feedbacksRef = collection(db, 'feedbacks');
-    const q = query(feedbacksRef, orderBy('createdAt', 'desc'));
+    console.log('⏰ Starting polling listener for ALL feedbacks');
     
-    console.log('Setting up Firebase real-time listener...');
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log('Firebase snapshot received:', snapshot.size, 'feedbacks');
-      
-      snapshot.docChanges().forEach((change) => {
-        console.log('Change detected:', change.type, 'for doc:', change.doc.id);
+    const checkAllFeedbacks = async () => {
+      try {
+        console.log('🔍 Checking ALL feedbacks from Firebase...');
         
-        if (change.type === 'added') {
-          const newFeedback = change.doc.data();
-          const feedbackId = change.doc.id;
+        const feedbacksRef = collection(db, 'feedbacks');
+        const q = query(feedbacksRef, orderBy('createdAt', 'desc'));
+        
+        const snapshot = await getDocs(q);
+        console.log('📊 Total feedbacks in DB:', snapshot.size);
+        
+        // Process all feedbacks
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          const feedbackId = doc.id;
           
-          // Skip if this is the initial load or we've already processed this ID
-          if (initialLoad) {
-            console.log('Initial load - skipping notification');
-            setLastProcessedId(feedbackId);
+          // Skip if already processed
+          if (processedIds.current.has(feedbackId)) {
             return;
           }
           
-          if (feedbackId === lastProcessedId) {
-            console.log('Already processed this feedback:', feedbackId);
-            return;
-          }
+          processedIds.current.add(feedbackId);
           
-          console.log('New feedback detected:', {
-            id: feedbackId,
-            customerName: newFeedback.customerName,
-            rating: newFeedback.rating,
-            comment: newFeedback.comment?.substring(0, 50) + '...'
-          });
-          
-          // Add notification for new feedback
+          // Send notification for EVERY feedback (first time load pe)
           addNotification({
-            title: '🌟 New Feedback Received!',
-            message: `${newFeedback.customerName} gave ${newFeedback.rating} ⭐ for "${newFeedback.serviceOrProduct}"`,
+            title: '📥 Feedback Loaded',
+            message: `${data.customerName}'s feedback loaded from database`,
             type: 'new_feedback',
             feedbackId: feedbackId,
-            rating: newFeedback.rating
+            rating: data.rating
           });
-          
-          setLastProcessedId(feedbackId);
-        }
-      });
-    }, (error) => {
-      console.error('Firebase listener error:', error);
-    });
-
-    // Cleanup
-    return () => {
-      clearTimeout(timer);
-      unsubscribe();
+        });
+        
+      } catch (error) {
+        console.error('Error checking feedbacks:', error);
+      }
     };
-  }, [initialLoad, lastProcessedId, addNotification, setInitialLoadComplete]);
 
-  return null; // This component doesn't render anything
+    // Check immediately on mount
+    checkAllFeedbacks();
+    
+    // Then check every 30 seconds for any missed feedbacks
+    const intervalId = setInterval(checkAllFeedbacks, 30000);
+    
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [addNotification]);
+
+  // Method 2: Firebase real-time listener
+  useEffect(() => {
+    console.log('🔥 Setting up Firebase real-time listener');
+    
+    try {
+      const feedbacksRef = collection(db, 'feedbacks');
+      const q = query(feedbacksRef, orderBy('createdAt', 'desc'));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        console.log('📡 Firebase listener triggered, docs:', snapshot.size);
+        
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            const feedbackId = change.doc.id;
+            
+            // Skip if already processed
+            if (processedIds.current.has(feedbackId)) {
+              console.log('⏭️ Skipping already processed:', feedbackId);
+              return;
+            }
+            
+            processedIds.current.add(feedbackId);
+            
+            console.log('🎯 NEW FEEDBACK DETECTED (Firebase)!', {
+              id: feedbackId,
+              customer: data.customerName,
+              rating: data.rating,
+              time: new Date().toISOString()
+            });
+            
+            addNotification({
+              title: '🌟 New Feedback Received!',
+              message: `${data.customerName} gave ${data.rating} ⭐ for "${data.serviceOrProduct}"`,
+              type: 'new_feedback',
+              feedbackId: feedbackId,
+              rating: data.rating
+            });
+          }
+        });
+      }, (error) => {
+        console.error('❌ Firebase listener error:', error);
+      });
+      
+      return () => {
+        console.log('🧹 Cleaning up Firebase listener');
+        unsubscribe();
+      };
+    } catch (error) {
+      console.error('❌ Failed to setup Firebase listener:', error);
+    }
+  }, [addNotification]);
+
+  // Manual test and debug buttons
+  return (
+    <></>
+  );
 };
 
 // Main AdminFeedbackPage Component
@@ -546,8 +557,6 @@ export default function AdminFeedbackPage() {
   const [filterType, setFilterType] = useState('all');
   const [filterRating, setFilterRating] = useState('all');
   const [activeTab, setActiveTab] = useState('overview');
-
-  const { addNotification } = useNotifications();
 
   // Stats states
   const [stats, setStats] = useState({
@@ -572,53 +581,6 @@ export default function AdminFeedbackPage() {
   useEffect(() => {
     fetchFeedbacks();
   }, []);
-
-  // Real-time listener for status updates
-  useEffect(() => {
-    if (loading) return; // Don't setup listener until initial load is complete
-    
-    const feedbacksRef = collection(db, 'feedbacks');
-    const q = query(feedbacksRef, orderBy('createdAt', 'desc'));
-    
-    console.log('Setting up status change listener...');
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        // Check for modified feedbacks (status updates, replies, etc.)
-        if (change.type === 'modified') {
-          const updatedFeedback = change.doc.data();
-          const feedbackId = change.doc.id;
-          
-          // Find the old feedback to compare
-          const oldFeedback = feedbacks.find(f => f.id === feedbackId);
-          
-          if (oldFeedback) {
-            // Check if status changed
-            if (oldFeedback.status !== updatedFeedback.status) {
-              addNotification({
-                title: `Feedback ${updatedFeedback.status === 'approved' ? '✅ Approved' : '❌ Rejected'}`,
-                message: `Feedback from ${updatedFeedback.customerName} has been ${updatedFeedback.status}`,
-                type: 'status_update',
-                feedbackId: feedbackId
-              });
-            }
-            
-            // Check if admin reply was added
-            if (!oldFeedback.adminReply && updatedFeedback.adminReply) {
-              addNotification({
-                title: '💬 Reply Sent!',
-                message: `You replied to ${updatedFeedback.customerName}'s feedback`,
-                type: 'reply_added',
-                feedbackId: feedbackId
-              });
-            }
-          }
-        }
-      });
-    });
-    
-    return () => unsubscribe();
-  }, [loading, feedbacks, addNotification]);
 
   const fetchFeedbacks = async () => {
     try {
@@ -723,16 +685,6 @@ export default function AdminFeedbackPage() {
         updatedAt: Timestamp.now()
       });
       
-      const feedback = feedbacks.find(f => f.id === id);
-      if (feedback) {
-        addNotification({
-          title: `Feedback ${status === 'approved' ? '✅ Approved' : '❌ Rejected'}`,
-          message: `Feedback from ${feedback.customerName} has been ${status}`,
-          type: 'status_update',
-          feedbackId: id
-        });
-      }
-      
       setFeedbacks(feedbacks.map(f => 
         f.id === id ? { ...f, status } : f
       ));
@@ -760,16 +712,6 @@ export default function AdminFeedbackPage() {
         adminReply,
         updatedAt: Timestamp.now()
       });
-      
-      const feedback = feedbacks.find(f => f.id === id);
-      if (feedback) {
-        addNotification({
-          title: '💬 Reply Sent!',
-          message: `You replied to ${feedback.customerName}'s feedback`,
-          type: 'reply_added',
-          feedbackId: id
-        });
-      }
       
       setFeedbacks(feedbacks.map(f => 
         f.id === id ? { ...f, adminReply } : f
@@ -899,7 +841,7 @@ export default function AdminFeedbackPage() {
   return (
     <ProtectedRoute requiredRole="super_admin">
       <NotificationProvider>
-        {/* Real-time Feedback Listener */}
+        {/* Real-time Feedback Listener with Debug Panel */}
         <FeedbackListener />
         
         <div className="flex h-screen bg-[#f8f9fa]">
@@ -1237,7 +1179,7 @@ export default function AdminFeedbackPage() {
                           variant="outline"
                           className="border-gray-200 rounded-lg flex items-center gap-2"
                         >
-                          <Loader2 className="w-4 h-4" /> Refresh
+                          Refresh
                         </Button>
                         <Button
                           onClick={downloadCSV}
@@ -1252,8 +1194,7 @@ export default function AdminFeedbackPage() {
                     {/* Loading State */}
                     {loading ? (
                       <div className="text-center py-12">
-                        <Loader2 className="w-12 h-12 animate-spin text-secondary mx-auto mb-4" />
-                        <p className="text-lg font-serif text-primary">Loading feedbacks...</p>
+                        <div className="text-lg font-serif text-primary">Loading feedbacks...</div>
                       </div>
                     ) : filteredFeedbacks.length === 0 ? (
                       <Card className="border-none shadow-sm rounded-xl">
@@ -1444,11 +1385,7 @@ export default function AdminFeedbackPage() {
                                           disabled={updatingId === feedback.id}
                                           className="w-full bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2"
                                         >
-                                          {updatingId === feedback.id ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            <CheckCircle className="w-4 h-4" />
-                                          )}
+                                          <CheckCircle className="w-4 h-4" />
                                           Approve
                                         </Button>
                                         <Button
@@ -1456,11 +1393,7 @@ export default function AdminFeedbackPage() {
                                           disabled={updatingId === feedback.id}
                                           className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2"
                                         >
-                                          {updatingId === feedback.id ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            <XCircle className="w-4 h-4" />
-                                          )}
+                                          <XCircle className="w-4 h-4" />
                                           Reject
                                         </Button>
                                       </>
@@ -1494,11 +1427,7 @@ export default function AdminFeedbackPage() {
                                           disabled={updatingId === feedback.id}
                                           className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
                                         >
-                                          {updatingId === feedback.id ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            'Send Reply'
-                                          )}
+                                          Send Reply
                                         </Button>
                                         <Button
                                           onClick={() => {

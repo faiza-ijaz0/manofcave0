@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { Package, DollarSign, TrendingUp, Plus, Edit, MoreVertical, Search, Filter, Building, Star, Image as ImageIcon, Trash2, Eye, EyeOff, Loader2, Tag, Box } from "lucide-react";
+import { Package, DollarSign, TrendingUp, Plus, Edit, MoreVertical, Search, Filter, Building, Star, Image as ImageIcon, Trash2, Eye, EyeOff, Tag, Box } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
@@ -85,9 +85,6 @@ export default function SuperAdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [branchesLoading, setBranchesLoading] = useState(true);
-  const [categoriesLoading, setCategoriesLoading] = useState(true);
   
   // State for operations
   const [isAdding, setIsAdding] = useState(false);
@@ -126,7 +123,6 @@ export default function SuperAdminProducts() {
 
     const fetchProducts = async () => {
       try {
-        setLoading(true);
         const productsRef = collection(db, 'products');
         const q = query(productsRef, orderBy('createdAt', 'desc'));
         
@@ -161,15 +157,12 @@ export default function SuperAdminProducts() {
           });
           
           setProducts(productsData);
-          setLoading(false);
         }, (error) => {
           console.error("Error fetching products: ", error);
-          setLoading(false);
         });
 
       } catch (error) {
         console.error("Error in fetchProducts: ", error);
-        setLoading(false);
       }
     };
 
@@ -188,7 +181,6 @@ export default function SuperAdminProducts() {
 
     const fetchBranches = async () => {
       try {
-        setBranchesLoading(true);
         const branchesRef = collection(db, 'branches');
         const q = query(branchesRef, orderBy('name'));
         
@@ -210,15 +202,12 @@ export default function SuperAdminProducts() {
           });
           
           setBranches(branchesData);
-          setBranchesLoading(false);
         }, (error) => {
           console.error("Error fetching branches: ", error);
-          setBranchesLoading(false);
         });
 
       } catch (error) {
         console.error("Error in fetchBranches: ", error);
-        setBranchesLoading(false);
       }
     };
 
@@ -237,7 +226,6 @@ export default function SuperAdminProducts() {
 
     const fetchCategories = async () => {
       try {
-        setCategoriesLoading(true);
         const categoriesRef = collection(db, 'categories');
         
         // Simple query without complex where clauses
@@ -267,15 +255,12 @@ export default function SuperAdminProducts() {
           );
           
           setCategories(productCategories);
-          setCategoriesLoading(false);
         }, (error) => {
           console.error("Error fetching categories: ", error);
-          setCategoriesLoading(false);
         });
 
       } catch (error) {
         console.error("Error in fetchCategories: ", error);
-        setCategoriesLoading(false);
       }
     };
 
@@ -629,20 +614,6 @@ export default function SuperAdminProducts() {
     return (((price - cost) / price) * 100).toFixed(1);
   };
 
-  // Render loading state
-  if (loading && products.length === 0) {
-    return (
-      <ProtectedRoute requiredRole="super_admin">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-secondary" />
-            <p className="text-muted-foreground">Loading products...</p>
-          </div>
-        </div>
-      </ProtectedRoute>
-    );
-  }
-
   return (
     <ProtectedRoute requiredRole="super_admin">
       <div className="flex h-screen bg-gray-50">
@@ -665,12 +636,6 @@ export default function SuperAdminProducts() {
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">Products Management</h1>
                   <p className="text-sm text-gray-600">Manage retail inventory across all branches</p>
-                  {loading && products.length > 0 && (
-                    <div className="flex items-center mt-1">
-                      <Loader2 className="w-3 h-3 animate-spin mr-1 text-gray-400" />
-                      <span className="text-xs text-gray-500">Syncing...</span>
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="flex items-center gap-4">
@@ -681,7 +646,6 @@ export default function SuperAdminProducts() {
                     resetProductForm();
                     setShowAddProductDialog(true);
                   }}
-                  disabled={loading}
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Product
@@ -770,11 +734,10 @@ export default function SuperAdminProducts() {
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="pl-10"
-                          disabled={loading}
                         />
                       </div>
                     </div>
-                    <Select value={categoryFilter} onValueChange={setCategoryFilter} disabled={loading}>
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                       <SelectTrigger className="w-full sm:w-48">
                         <SelectValue placeholder="Filter by category" />
                       </SelectTrigger>
@@ -785,7 +748,7 @@ export default function SuperAdminProducts() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Select value={priceFilter} onValueChange={setPriceFilter} disabled={loading}>
+                    <Select value={priceFilter} onValueChange={setPriceFilter}>
                       <SelectTrigger className="w-full sm:w-48">
                         <SelectValue placeholder="Filter by price" />
                       </SelectTrigger>
@@ -796,7 +759,7 @@ export default function SuperAdminProducts() {
                         <SelectItem value="over-50">Over $50</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Select value={stockFilter} onValueChange={setStockFilter} disabled={loading}>
+                    <Select value={stockFilter} onValueChange={setStockFilter}>
                       <SelectTrigger className="w-full sm:w-48">
                         <SelectValue placeholder="Filter by stock" />
                       </SelectTrigger>
@@ -812,12 +775,7 @@ export default function SuperAdminProducts() {
               </Card>
 
               {/* Products Grid */}
-              {loading && products.length === 0 ? (
-                <div className="text-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-gray-400" />
-                  <p className="text-gray-600">Loading products...</p>
-                </div>
-              ) : filteredProducts.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <div className="text-center py-12">
                   <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No products found</h3>
@@ -875,20 +833,20 @@ export default function SuperAdminProducts() {
                           </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" disabled={isDeleting === product.id}>
+                              <Button variant="ghost" size="sm">
                                 <MoreVertical className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEditDialog(product)} disabled={isDeleting === product.id}>
+                              <DropdownMenuItem onClick={() => openEditDialog(product)}>
                                 <Edit className="w-4 h-4 mr-2" />
                                 Edit Product
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateProductStock(product, product.totalStock + 10)} disabled={isDeleting === product.id}>
+                              <DropdownMenuItem onClick={() => updateProductStock(product, product.totalStock + 10)}>
                                 <Package className="w-4 h-4 mr-2" />
                                 Restock (+10)
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => toggleProductStatus(product)} disabled={isDeleting === product.id}>
+                              <DropdownMenuItem onClick={() => toggleProductStatus(product)}>
                                 {product.status === 'active' || product.status === 'low-stock' || product.status === 'out-of-stock' ? (
                                   <>
                                     <EyeOff className="w-4 h-4 mr-2" />
@@ -904,7 +862,6 @@ export default function SuperAdminProducts() {
                               <DropdownMenuItem 
                                 onClick={() => openDeleteDialog(product)} 
                                 className="text-red-600"
-                                disabled={isDeleting === product.id}
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
@@ -1077,12 +1034,10 @@ export default function SuperAdminProducts() {
                     });
                   }}
                   className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                  disabled={isAdding || isEditing || categoriesLoading}
+                  disabled={isAdding || isEditing}
                 >
                   <option value="">Select a category</option>
-                  {categoriesLoading ? (
-                    <option value="" disabled>Loading categories...</option>
-                  ) : categories.length === 0 ? (
+                  {categories.length === 0 ? (
                     <option value="" disabled>No product categories available</option>
                   ) : (
                     categories.map((category) => (
@@ -1092,10 +1047,7 @@ export default function SuperAdminProducts() {
                     ))
                   )}
                 </select>
-                {categoriesLoading && (
-                  <p className="text-xs text-gray-500 mt-1">Loading categories...</p>
-                )}
-                {!categoriesLoading && categories.length === 0 && (
+                {categories.length === 0 && (
                   <p className="text-xs text-red-500 mt-1">No product categories found. Please add categories first.</p>
                 )}
               </div>
@@ -1190,12 +1142,10 @@ export default function SuperAdminProducts() {
                     branchId: e.target.value
                   })}
                   className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                  disabled={isAdding || isEditing || branchesLoading}
+                  disabled={isAdding || isEditing}
                 >
                   <option value="">Select a branch</option>
-                  {branchesLoading ? (
-                    <option value="" disabled>Loading branches...</option>
-                  ) : branches.length === 0 ? (
+                  {branches.length === 0 ? (
                     <option value="" disabled>No branches available</option>
                   ) : (
                     branches.map((branch) => (
@@ -1206,10 +1156,7 @@ export default function SuperAdminProducts() {
                     ))
                   )}
                 </select>
-                {branchesLoading && (
-                  <p className="text-xs text-gray-500 mt-1">Loading branches...</p>
-                )}
-                {!branchesLoading && branches.length === 0 && (
+                {branches.length === 0 && (
                   <p className="text-xs text-red-500 mt-1">No branches available. Please add branches first.</p>
                 )}
               </div>
@@ -1244,16 +1191,7 @@ export default function SuperAdminProducts() {
                 className="w-full bg-secondary hover:bg-secondary/90 text-primary rounded-lg font-bold mt-6"
                 disabled={isAdding || isEditing}
               >
-                {isAdding || isEditing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {selectedProduct ? 'Updating...' : 'Adding...'}
-                  </>
-                ) : selectedProduct ? (
-                  'Update Product'
-                ) : (
-                  'Add Product'
-                )}
+                {selectedProduct ? 'Update Product' : 'Add Product'}
               </Button>
               
               {/* Show which fields are missing */}
@@ -1347,27 +1285,16 @@ export default function SuperAdminProducts() {
                       setSelectedProduct(null);
                     }}
                     className="px-6 py-3"
-                    disabled={isDeleting === selectedProduct?.id}
                   >
                     Cancel
                   </Button>
                   <Button
                     variant="destructive"
                     onClick={handleDeleteProduct}
-                    disabled={isDeleting === selectedProduct?.id}
                     className="px-8 py-3"
                   >
-                    {isDeleting === selectedProduct?.id ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Deleting...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 className="w-5 h-5 mr-2" />
-                        Delete Product
-                      </>
-                    )}
+                    <Trash2 className="w-5 h-5 mr-2" />
+                    Delete Product
                   </Button>
                 </div>
               </div>

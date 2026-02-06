@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, Star, ShoppingCart, Filter, Package, Check, Sparkles, ChevronRight, Loader2, TrendingUp, Box, DollarSign, RefreshCw } from 'lucide-react';
+import { Search, Star, ShoppingCart, Filter, Package, Check, Sparkles, ChevronRight, TrendingUp, Box, DollarSign, RefreshCw } from 'lucide-react';
 import { create } from 'zustand';
 import { 
   collection, 
@@ -73,18 +73,13 @@ interface CartItem {
 
 interface ProductsStore {
   products: Product[];
-  isLoading: boolean;
-  error: string | null;
   fetchProducts: () => Promise<void>;
 }
 
 const useProductsStore = create<ProductsStore>((set) => ({
   products: [],
-  isLoading: false,
-  error: null,
 
   fetchProducts: async () => {
-    set({ isLoading: true, error: null });
     try {
       const productsRef = collection(db, 'products');
       const q = query(productsRef, orderBy('createdAt', 'desc'));
@@ -116,29 +111,22 @@ const useProductsStore = create<ProductsStore>((set) => ({
         });
       });
       
-      set({ products: productsData, isLoading: false });
+      set({ products: productsData });
     } catch (error) {
       console.error('Error fetching products:', error);
-      set({ 
-        error: 'Failed to fetch products. Please try again later.', 
-        isLoading: false 
-      });
     }
   },
 }));
 
 interface StaffStore {
   staff: StaffMember[];
-  isLoading: boolean;
   fetchStaff: () => Promise<void>;
 }
 
 const useStaffStore = create<StaffStore>((set) => ({
   staff: [],
-  isLoading: false,
 
   fetchStaff: async () => {
-    set({ isLoading: true });
     try {
       const staffRef = collection(db, 'staff');
       const querySnapshot = await getDocs(staffRef);
@@ -154,10 +142,10 @@ const useStaffStore = create<StaffStore>((set) => ({
         });
       });
       
-      set({ staff: staffData, isLoading: false });
+      set({ staff: staffData });
     } catch (error) {
       console.error('Error fetching staff:', error);
-      set({ staff: [], isLoading: false });
+      set({ staff: [] });
     }
   },
 }));
@@ -212,8 +200,8 @@ interface StockStatus {
 // Main Component
 export default function ProductsPage() {
   const router = useRouter();
-  const { products, fetchProducts, isLoading: productsLoading } = useProductsStore();
-  const { staff, fetchStaff, isLoading: staffLoading } = useStaffStore();
+  const { products, fetchProducts } = useProductsStore();
+  const { staff, fetchStaff } = useStaffStore();
   const { addToCart, cartItems } = useCartStore();
   
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -369,9 +357,6 @@ export default function ProductsPage() {
     }
   };
 
-  // Loading state
-  const isLoading = productsLoading || staffLoading;
-
   // Calculate statistics
   const totalProducts = products.length;
   const totalValue = products.reduce((sum, p) => sum + (p.price * p.totalStock), 0);
@@ -411,16 +396,6 @@ export default function ProductsPage() {
   return (
     <div className="min-h-screen bg-[#fcfcfc]">
       <Header />
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="fixed inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
-            <p className="text-lg font-semibold text-primary">Loading products...</p>
-          </div>
-        </div>
-      )}
 
       {/* Premium Hero Section */}
       <section className="relative py-32 px-4 overflow-hidden bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a]">
@@ -628,7 +603,7 @@ export default function ProductsPage() {
           </div>
 
           {/* Products Grid */}
-          {products.length === 0 && !isLoading ? (
+          {products.length === 0 ? (
             <div className="text-center py-20 bg-white rounded-[2.5rem] shadow-sm border border-gray-100">
               <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Package className="w-12 h-12 text-gray-300" />
@@ -807,7 +782,7 @@ export default function ProductsPage() {
                     {/* Action Button */}
                     <Button 
                       onClick={() => handleAddToCart(product)}
-                      disabled={product.totalStock <= 0 || isAddingToCart === product.id}
+                      disabled={product.totalStock <= 0}
                       className={cn(
                         "w-full mt-6 h-14 rounded-2xl font-black tracking-[0.2em] text-[10px] transition-all duration-500 shadow-lg",
                         addedProduct === product.id 
@@ -817,12 +792,7 @@ export default function ProductsPage() {
                           : "bg-primary hover:bg-secondary hover:text-primary text-white"
                       )}
                     >
-                      {isAddingToCart === product.id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" /> 
-                          ADDING...
-                        </>
-                      ) : addedProduct === product.id ? (
+                      {addedProduct === product.id ? (
                         <>
                           <Check className="w-4 h-4 mr-2" /> 
                           ADDED TO CART

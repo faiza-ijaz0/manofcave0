@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Header } from "@/components/shared/Header";
-import { MapPin, Star, Clock, Phone, Search, Filter, CheckCircle2, ArrowRight, Sparkles, Award, Users, Zap, Crown, Shield, Mail, User, Loader2, RefreshCw, Navigation, X, Instagram, Facebook, MessageCircle, Share2, Globe, Calendar, Info, Wifi, Coffee, Car, Users as UsersIcon, Smartphone, CreditCard, WifiIcon, Tv, Music, Coffee as CoffeeIcon } from "lucide-react";
+import { MapPin, Star, Clock, Phone, Search, Filter, CheckCircle2, ArrowRight, Sparkles, Award, Users, Zap, Crown, Shield, Mail, User, RefreshCw, Navigation, X, MessageCircle, Share2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -53,32 +53,25 @@ interface Service {
   status: string;
   branchNames?: string[];
   branches?: string[];
-  // Aap ke data structure ke hisaab se aur fields
 }
 
 // Store Definition with Real-time Updates
 interface BranchesStore {
   branches: Branch[];
-  isLoading: boolean;
   error: string | null;
   hasFetchedInitialData: boolean;
   fetchBranches: () => Promise<void>;
   fetchBranchById: (id: string) => Promise<Branch | null>;
   fetchBranchServices: (branchName: string) => Promise<Service[]>;
-  setupRealtimeUpdates: () => () => void; // Cleanup function
+  setupRealtimeUpdates: () => () => void;
 }
 
 const useBranchesStore = create<BranchesStore>((set, get) => ({
   branches: [],
-  isLoading: false,
   error: null,
   hasFetchedInitialData: false,
 
   fetchBranches: async () => {
-    // Don't refetch if already loading or has data
-    if (get().isLoading || get().hasFetchedInitialData) return;
-    
-    set({ isLoading: true, error: null });
     try {
       const branchesRef = collection(db, 'branches');
       const q = query(branchesRef, orderBy('createdAt', 'desc'));
@@ -105,8 +98,8 @@ const useBranchesStore = create<BranchesStore>((set, get) => ({
           managerPhone: data.managerPhone || 'Not available',
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
-          rating: Math.floor(Math.random() * 5) + 4, // Random rating 4-5 for demo
-          reviews: Math.floor(Math.random() * 200) + 50, // Random reviews 50-250
+          rating: Math.floor(Math.random() * 5) + 4,
+          reviews: Math.floor(Math.random() * 200) + 50,
           services: ['Haircuts', 'Beard Grooming', 'Premium Packages', 'Color Services'],
           features: ['VIP Lounge', 'Free WiFi', 'Beverages', 'Premium Products', 'Parking', 'Private Rooms']
         });
@@ -114,14 +107,12 @@ const useBranchesStore = create<BranchesStore>((set, get) => ({
       
       set({ 
         branches: branchesData, 
-        isLoading: false, 
         hasFetchedInitialData: true 
       });
     } catch (error) {
       console.error('Error fetching branches:', error);
       set({ 
-        error: 'Failed to fetch branches. Please try again later.', 
-        isLoading: false 
+        error: 'Failed to fetch branches. Please try again later.'
       });
     }
   },
@@ -164,13 +155,9 @@ const useBranchesStore = create<BranchesStore>((set, get) => ({
     }
   },
 
-  // NAYA FUNCTION: Branch ki services fetch karne ke liye
   fetchBranchServices: async (branchName: string): Promise<Service[]> => {
     try {
       const servicesRef = collection(db, 'services');
-      
-      // Aap ke data structure ke hisaab se query
-      // Agar branchNames array mein branch name hai
       const q = query(servicesRef, where('branchNames', 'array-contains', branchName));
       
       const querySnapshot = await getDocs(q);
@@ -244,16 +231,14 @@ const useBranchesStore = create<BranchesStore>((set, get) => ({
       return unsubscribe;
     } catch (error) {
       console.error('Error setting up real-time updates:', error);
-      return () => {}; // Return empty cleanup function
+      return () => {};
     }
   },
 }));
 
 // WhatsApp contact function
 const openWhatsApp = (phoneNumber: string) => {
-  // Clean the phone number
   const cleanNumber = phoneNumber.replace(/\D/g, '');
-  // Open WhatsApp with the number
   window.open(`https://wa.me/${cleanNumber}`, '_blank');
 };
 
@@ -265,7 +250,6 @@ export default function Branches() {
     fetchBranches, 
     fetchBranchById, 
     fetchBranchServices,
-    isLoading, 
     error,
     hasFetchedInitialData,
     setupRealtimeUpdates 
@@ -276,24 +260,20 @@ export default function Branches() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isLoadingBranch, setIsLoadingBranch] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [branchServices, setBranchServices] = useState<Service[]>([]);
 
-  // Use ref to track if we've already set up real-time updates
   const hasSetupRealtimeRef = useRef(false);
 
   // Fetch data on component mount - only once
   useEffect(() => {
     const loadData = async () => {
-      if (!hasFetchedInitialData && !isLoading) {
+      if (!hasFetchedInitialData) {
         await fetchBranches();
-        setIsInitialLoad(false);
       }
     };
     
     loadData();
-  }, [fetchBranches, hasFetchedInitialData, isLoading]);
+  }, [fetchBranches, hasFetchedInitialData]);
 
   // Set up real-time updates - only once
   useEffect(() => {
@@ -301,7 +281,6 @@ export default function Branches() {
       const cleanup = setupRealtimeUpdates();
       hasSetupRealtimeRef.current = true;
       
-      // Cleanup on unmount
       return cleanup;
     }
   }, [hasFetchedInitialData, setupRealtimeUpdates]);
@@ -368,13 +347,11 @@ export default function Branches() {
   const totalManagers = new Set(branches.map(b => b.managerName)).size;
   const totalCities = new Set(branches.map(b => b.city)).size;
 
-  // Handle view details - UPDATED VERSION
+  // Handle view details
   const handleViewDetails = async (branchId: string, branchName: string) => {
-    setIsLoadingBranch(true);
     try {
       const branch = await fetchBranchById(branchId);
       if (branch) {
-        // YEH IMPORTANT CHANGE: Firebase se branch ki actual services fetch karo
         const services = await fetchBranchServices(branchName);
         setBranchServices(services);
         setSelectedBranch(branch);
@@ -382,8 +359,6 @@ export default function Branches() {
       }
     } catch (error) {
       console.error('Error loading branch details:', error);
-    } finally {
-      setIsLoadingBranch(false);
     }
   };
 
@@ -396,40 +371,17 @@ export default function Branches() {
         url: window.location.href,
       });
     } else {
-      // Fallback for browsers that don't support Web Share API
       navigator.clipboard.writeText(`${branch.name}\n${branch.address}\n${branch.phone}\n${window.location.href}`);
       alert('Branch details copied to clipboard!');
     }
   };
 
-  // Show skeleton loader during initial load
-  if (isInitialLoad && isLoading) {
-    return (
-      <div className="min-h-screen bg-[#fcfcfc]">
-        <Header />
-        <div className="flex items-center justify-center h-screen">
-          <Loader2 className="w-12 h-12 animate-spin text-primary" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#fcfcfc]">
       <Header />
 
-      {/* Loading Overlay - Only show for initial load */}
-      {isLoading && !hasFetchedInitialData && (
-        <div className="fixed inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
-            <p className="text-lg font-semibold text-primary">Loading branches...</p>
-          </div>
-        </div>
-      )}
-
       {/* Error State */}
-      {error && !isLoading && (
+      {error && (
         <div className="fixed inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="text-center space-y-4 max-w-md p-8">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
@@ -492,7 +444,6 @@ export default function Branches() {
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:bg-white/15 transition-all">
               <div className="text-3xl font-serif font-bold text-secondary mb-2">{totalBranches}</div>
               <div className="text-white/70 text-xs font-black uppercase tracking-widest">Premium Locations</div>
-             
             </div>
             <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:bg-white/15 transition-all">
               <div className="text-3xl font-serif font-bold text-secondary mb-2">{activeBranches}</div>
@@ -576,7 +527,7 @@ export default function Branches() {
           </div>
 
           {/* Branches Grid */}
-          {branches.length === 0 && !isLoading ? (
+          {branches.length === 0 ? (
             <div className="text-center py-20 bg-white rounded-[2.5rem] shadow-sm border border-gray-100 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-secondary/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
               <div className="relative z-10">
@@ -705,10 +656,10 @@ export default function Branches() {
                             <div className="inline-flex items-center gap-2 border border-secondary/30 text-secondary text-[9px] font-black uppercase tracking-[0.3em] px-3 py-1 rounded-full mb-3">
                               <Award className="w-2.5 h-2.5" />
                             {branch.country.toUpperCase()}
-</div> {/* YEH LINE CHANGE KARO */}
-<h3 className="text-2xl font-serif font-bold text-primary group-hover:text-secondary transition-colors duration-300">
-  {branch.name}
-</h3>
+                            </div>
+                            <h3 className="text-2xl font-serif font-bold text-primary group-hover:text-secondary transition-colors duration-300">
+                              {branch.name}
+                            </h3>
                             <p className="text-sm text-gray-600 flex items-center gap-2 mt-2">
                               <MapPin className="w-3.5 h-3.5 text-secondary flex-shrink-0" />
                               <span className="line-clamp-2">{branch.address}</span>
@@ -807,7 +758,6 @@ export default function Branches() {
                             >
                               <Mail className="w-3.5 h-3.5" />
                             </Button>
-                           
                           </div>
                         </div>
                       </div>
@@ -911,13 +861,9 @@ export default function Branches() {
       {/* Branch Details Sidebar */}
       <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
         <SheetContent className="w-full sm:max-w-2xl lg:max-w-3xl overflow-y-auto p-5 rounded-3xl h-[750px] m-auto">
-          {isLoadingBranch ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : selectedBranch ? (
+          {selectedBranch ? (
             <>
-              {/* Sheet Header - This fixes the accessibility error */}
+              {/* Sheet Header */}
               <SheetHeader className="sr-only">
                 <SheetTitle>Branch Details - {selectedBranch.name}</SheetTitle>
                 <SheetDescription>
@@ -1006,7 +952,7 @@ export default function Branches() {
                         <div className="grid grid-cols-2 gap-3">
                           {selectedBranch.features?.map((feature, i) => (
                             <div key={i} className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                              {getAmenityIcon(feature)}
+                              <CheckCircle2 className="w-4 h-4 text-secondary" />
                               <span className="text-sm">{feature}</span>
                             </div>
                           ))}
@@ -1014,7 +960,7 @@ export default function Branches() {
                       </div>
                     </TabsContent>
                     
-                    {/* SERVICES TAB - YEH WALA IMPORTANT CHANGE HAI */}
+                    {/* SERVICES TAB */}
                     <TabsContent value="services" className="space-y-4">
                       {branchServices.length === 0 ? (
                         <div className="text-center py-8 bg-gray-50 rounded-xl">
@@ -1069,7 +1015,6 @@ export default function Branches() {
                                         {service.category}
                                       </div>
                                     </div>
-                                   
                                   </div>
                                 </div>
                               </div>
@@ -1135,7 +1080,6 @@ export default function Branches() {
                   {/* Quick Actions */}
                   <div className="pt-6 border-t">
                     <div className="flex flex-col sm:flex-row gap-3">
-                     
                       <Button 
                         variant="outline"
                         className="flex-1"
@@ -1166,7 +1110,7 @@ export default function Branches() {
         <MessageCircle className="w-6 h-6" />
       </Button>
 
-      {/* Refresh Button - Optional now since we have real-time updates */}
+      {/* Refresh Button */}
       <div className="fixed bottom-6 right-6 z-40">
         <Button
           onClick={fetchBranches}
@@ -1178,30 +1122,4 @@ export default function Branches() {
       </div>
     </div>
   );
-}
-
-// Helper function for amenity icons
-function getAmenityIcon(amenity: string) {
-  switch (amenity.toLowerCase()) {
-    case 'wifi':
-    case 'free wifi':
-      return <WifiIcon className="w-4 h-4 text-secondary" />;
-    case 'parking':
-      return <Car className="w-4 h-4 text-secondary" />;
-    case 'beverages':
-    case 'coffee':
-      return <CoffeeIcon className="w-4 h-4 text-secondary" />;
-    case 'tv':
-    case 'tv entertainment':
-      return <Tv className="w-4 h-4 text-secondary" />;
-    case 'music':
-    case 'music system':
-      return <Music className="w-4 h-4 text-secondary" />;
-    case 'private rooms':
-      return <UsersIcon className="w-4 h-4 text-secondary" />;
-    case 'premium products':
-      return <Award className="w-4 h-4 text-secondary" />;
-    default:
-      return <CheckCircle2 className="w-4 h-4 text-secondary" />;
-  }
 }

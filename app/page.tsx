@@ -9,7 +9,8 @@ import {
   Calendar, ChevronRight, ShoppingBag, Ticket, ArrowRight,
   Quote, Instagram, CheckCircle2, ShieldCheck, Zap, Building,
   TrendingUp, Package, DollarSign, RefreshCw,
-  Crown, Gem, Shield, Sparkles, Check, UserCheck
+  Crown, Gem, Shield, Sparkles, Check, UserCheck,
+  Grid3X3
 } from "lucide-react";
 import { Header } from "@/components/shared/Header";
 import Link from "next/link";
@@ -133,6 +134,20 @@ interface Membership {
   updatedAt: Date;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  branchId: string;
+  branchName: string;
+  branchCity: string;
+  type: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 interface HomeStore {
   services: Service[];
   products: Product[];
@@ -140,6 +155,7 @@ interface HomeStore {
   branches: Branch[];
   offers: Offer[];
   memberships: Membership[];
+  categories: Category[];
   stats: {
     totalStaff: number;
     totalServices: number;
@@ -147,10 +163,8 @@ interface HomeStore {
     totalBranches: number;
     totalOffers: number;
     totalMemberships: number;
+    totalCategories: number;
   };
-  
-  hasInitialLoad: boolean;
-  error: string | null;
   
   fetchHomeData: () => Promise<void>;
   fetchServices: () => Promise<void>;
@@ -159,6 +173,7 @@ interface HomeStore {
   fetchBranches: () => Promise<void>;
   fetchOffers: () => Promise<void>;
   fetchMemberships: () => Promise<void>;
+  fetchCategories: () => Promise<void>;
   calculateStats: () => void;
 }
 
@@ -169,6 +184,7 @@ const useHomeStore = create<HomeStore>((set, get) => ({
   branches: [],
   offers: [],
   memberships: [],
+  categories: [],
   stats: {
     totalStaff: 0,
     totalServices: 0,
@@ -176,12 +192,10 @@ const useHomeStore = create<HomeStore>((set, get) => ({
     totalBranches: 0,
     totalOffers: 0,
     totalMemberships: 0,
+    totalCategories: 0,
   },
-  hasInitialLoad: false,
-  error: null,
 
   fetchHomeData: async () => {
-    set({ error: null });
     try {
       await Promise.all([
         get().fetchServices(),
@@ -189,16 +203,12 @@ const useHomeStore = create<HomeStore>((set, get) => ({
         get().fetchStaff(),
         get().fetchBranches(),
         get().fetchOffers(),
-        get().fetchMemberships()
+        get().fetchMemberships(),
+        get().fetchCategories()
       ]);
       get().calculateStats();
-      set({ hasInitialLoad: true });
     } catch (error) {
       console.error('Error fetching home data:', error);
-      set({ 
-        error: 'Failed to load data. Please try again.', 
-        hasInitialLoad: true 
-      });
     }
   },
 
@@ -422,6 +432,45 @@ const useHomeStore = create<HomeStore>((set, get) => ({
     }
   },
 
+  fetchCategories: async () => {
+    try {
+      const categoriesRef = collection(db, 'categories');
+      // ⚠️ FIXED: Removed complex where clause causing index error
+      // Simple query se data fetch karo, phir client side filter karo
+      const q = query(categoriesRef, orderBy('createdAt', 'desc'), limit(8));
+      const querySnapshot = await getDocs(q);
+      
+      const categoriesData: Category[] = [];
+      querySnapshot.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate() || new Date();
+        const updatedAt = data.updatedAt?.toDate() || new Date();
+        
+        categoriesData.push({
+          id: doc.id,
+          name: data.name || 'Unnamed Category',
+          description: data.description || 'No description available',
+          image: data.image || 'https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?q=80&w=2070&auto=format&fit=crop',
+          branchId: data.branchId || '',
+          branchName: data.branchName || 'Unknown Branch',
+          branchCity: data.branchCity || 'Unknown City',
+          type: data.type || 'general',
+          isActive: data.isActive || true,
+          createdAt,
+          updatedAt
+        });
+      });
+      
+      // ✅ Client side filter for active categories
+      const activeCategories = categoriesData.filter(cat => cat.isActive);
+      set({ categories: activeCategories.slice(0, 4) }); // Limit to 4 active categories
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      // ✅ Fallback: Agar error aaye to empty array set karo
+      set({ categories: [] });
+    }
+  },
+
   calculateStats: () => {
     const state = get();
     set({
@@ -431,7 +480,8 @@ const useHomeStore = create<HomeStore>((set, get) => ({
         totalProducts: state.products.length,
         totalBranches: state.branches.length,
         totalOffers: state.offers.length,
-        totalMemberships: state.memberships.length
+        totalMemberships: state.memberships.length,
+        totalCategories: state.categories.length
       }
     });
   },
@@ -446,9 +496,8 @@ export default function Home() {
     branches, 
     offers,
     memberships,
+    categories,
     stats,
-    hasInitialLoad,
-    error, 
     fetchHomeData 
   } = useHomeStore();
 
@@ -462,6 +511,7 @@ export default function Home() {
   const totalActiveBranches = branches.filter(b => b.status === 'active').length;
   const totalActiveOffers = offers.length;
   const totalActiveMemberships = memberships.length;
+  const totalActiveCategories = categories.length;
 
   const totalServicesRevenue = services.reduce((sum, service) => sum + service.revenue, 0);
   const totalProductsRevenue = products.reduce((sum, product) => sum + product.revenue, 0);
@@ -550,27 +600,6 @@ export default function Home() {
     
     return 'All Branches';
   };
-
-  if (error && hasInitialLoad) {
-    return (
-      <div className="min-h-screen bg-[#fcfcfc] flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
-            <RefreshCw className="w-8 h-8 text-red-600" />
-          </div>
-          <h3 className="text-2xl font-serif font-bold text-primary">Error Loading Data</h3>
-          <p className="text-gray-600">{error}</p>
-          <Button 
-            onClick={fetchHomeData} 
-            className="mt-4 bg-primary hover:bg-primary/90"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#fcfcfc]">
@@ -692,161 +721,31 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="py-20 px-4 bg-gray-50/50 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.03] pointer-events-none"></div>
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
-            <div className="space-y-2">
-              <div className="inline-block bg-secondary/10 px-3 py-1 rounded-full">
-                <span className="text-secondary font-bold tracking-[0.2em] uppercase text-[10px]">Exclusive Privileges</span>
-              </div>
-              <h2 className="text-4xl md:text-5xl font-serif font-bold text-primary">Member Rewards</h2>
-              <Badge variant="outline" className="border-secondary/30 text-secondary mt-2">
-                {totalActiveOffers} Active Offers Available
-              </Badge>
-            </div>
-            <p className="text-muted-foreground max-w-md text-sm font-light">
-              Unlock premium benefits and exclusive savings designed for our most loyal patrons.
-            </p>
-          </div>
-          
-          {offers.length === 0 ? (
-            <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-              <Ticket className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-2xl font-serif font-bold text-gray-400 mb-2">No Offers Available</h3>
-              <p className="text-gray-400 font-light">Add active offers to Firebase to see them here</p>
-              <Button 
-                onClick={fetchHomeData} 
-                className="mt-4 bg-secondary hover:bg-secondary/90 text-primary"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh
-              </Button>
-            </div>
-          ) : (
-            <Carousel opts={{ align: "start", loop: true }} className="w-full">
-              <CarouselContent className="-ml-6">
-                {offers.map((offer) => {
-                  const discountText = formatDiscount(offer);
-                  const offerBgColor = getOfferBgColor(offer.offerType);
-                  
-                  return (
-                    <CarouselItem key={offer.id} className="pl-6 md:basis-1/2 lg:basis-1/4">
-                      <div className={cn(
-                        "p-8 rounded-3xl text-white relative overflow-hidden group cursor-pointer transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-2",
-                        offerBgColor
-                      )}>
-                        {offer.usageLimit && (
-                          <div className="absolute top-4 left-4 bg-black/30 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full z-20">
-                            {offer.usedCount}/{offer.usageLimit} USED
-                          </div>
-                        )}
-                        
-                        <div className="absolute -right-6 -top-6 opacity-10 group-hover:scale-125 group-hover:rotate-45 transition-all duration-700">
-                          <Ticket className="w-32 h-32 rotate-12" />
-                        </div>
-                        
-                        {offer.imageUrl && (
-                          <div className="absolute inset-0 opacity-20">
-                            <img 
-                              src={offer.imageUrl} 
-                              alt={offer.title}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                          </div>
-                        )}
-                        
-                        <div className="relative z-10 space-y-6">
-                          <div className="flex items-start justify-between">
-                            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                              <Zap className="w-5 h-5 text-white" />
-                            </div>
-                            <Badge className={cn(
-                              "text-[9px] font-black uppercase tracking-wider border-0",
-                              getOfferBadgeColor(offer.offerType)
-                            )}>
-                              {offer.offerType.toUpperCase()}
-                            </Badge>
-                          </div>
-                          
-                          <div>
-                            <span className="text-xs font-bold tracking-widest opacity-70 uppercase block mb-1">
-                              {offer.branchNames?.length > 0 
-                                ? `${offer.branchNames[0]}${offer.branchNames.length > 1 ? ` +${offer.branchNames.length - 1} more` : ''}`
-                                : 'All Branches'}
-                            </span>
-                            <h4 className="text-4xl font-serif font-bold">{discountText}</h4>
-                            <h5 className="text-xl font-semibold mt-2">{offer.title}</h5>
-                          </div>
-                          
-                          <p className="text-sm opacity-90 line-clamp-2">
-                            {offer.description}
-                          </p>
-                          
-                          <div className="pt-4 flex items-center justify-between border-t border-white/20">
-                            <div className="space-y-1">
-                              <span className="text-[10px] uppercase tracking-widest opacity-60">Valid Until</span>
-                              <div className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                <span className="text-xs font-semibold">
-                                  {offer.validTo.toLocaleDateString('en-US', { 
-                                    month: 'short', 
-                                    day: 'numeric',
-                                    year: 'numeric'
-                                  })}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="rounded-full bg-white/10 hover:bg-white/20 text-white"
-                            >
-                              <ArrowRight className="w-5 h-5" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </CarouselItem>
-                  );
-                })}
-              </CarouselContent>
-              <div className="hidden md:flex justify-end gap-3 mt-8">
-                <CarouselPrevious className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
-                <CarouselNext className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
-              </div>
-            </Carousel>
-          )}
-        </div>
-      </section>
+      
+    
 
-      <section className="py-20 px-4 bg-white relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/diamond.png')] opacity-[0.02] pointer-events-none"></div>
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
-            <div className="space-y-2">
+      <section className="py-24 px-4 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
+            <div className="space-y-3">
               <div className="inline-block bg-secondary/10 px-3 py-1 rounded-full">
-                <span className="text-secondary font-bold tracking-[0.2em] uppercase text-[10px]">Elite Access</span>
+                <span className="text-secondary font-bold tracking-[0.2em] uppercase text-[10px]">Our Collections</span>
               </div>
-              <h2 className="text-4xl md:text-5xl font-serif font-bold text-primary">Exclusive Memberships</h2>
-              <Badge variant="outline" className="border-secondary/30 text-secondary mt-2">
-                {totalActiveMemberships} Premium Plans Available
+              <h2 className="text-4xl md:text-5xl font-serif font-bold text-primary">Featured Categories</h2>
+              <Badge variant="outline" className="text-xs border-secondary/30 text-secondary">
+                {categories.length} Premium Categories Available
               </Badge>
             </div>
             <p className="text-muted-foreground max-w-md text-sm font-light">
-              Join our elite community and unlock unprecedented benefits, priority access, and exclusive privileges.
+              Explore our curated collections designed for the modern gentleman's grooming needs.
             </p>
           </div>
-          
-          {memberships.length === 0 ? (
+
+          {categories.length === 0 ? (
             <div className="text-center py-20 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
-              <Crown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-2xl font-serif font-bold text-gray-400 mb-2">No Memberships Available</h3>
-              <p className="text-gray-400 font-light">Add membership plans to Firebase to see them here</p>
+              <Grid3X3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-2xl font-serif font-bold text-gray-400 mb-2">No Categories Available</h3>
+              <p className="text-gray-400 font-light">Add categories to Firebase to see them here</p>
               <Button 
                 onClick={fetchHomeData} 
                 className="mt-4 bg-secondary hover:bg-secondary/90 text-primary"
@@ -856,110 +755,69 @@ export default function Home() {
               </Button>
             </div>
           ) : (
-            <Carousel opts={{ align: "start", loop: true }} className="w-full">
-              <CarouselContent className="-ml-6">
-                {memberships.map((membership) => {
-                  const TierIcon = getMembershipTierIcon(membership.tier);
-                  const membershipBgColor = getMembershipTierColor(membership.tier);
-                  const durationText = formatDuration(membership.duration);
-                  const branchName = getFirstBranchName(membership);
-                  const branchCountText = getBranchCountText(membership);
-                  
-                  return (
-                    <CarouselItem key={membership.id} className="pl-6 md:basis-1/2 lg:basis-1/4">
-                      <div className={cn(
-                        "p-8 rounded-3xl text-white relative overflow-hidden group cursor-pointer transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-2",
-                        membershipBgColor
-                      )}>
-                        {membership.totalSubscriptions > 10 && (
-                          <div className="absolute top-4 left-4 bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full z-20">
-                            POPULAR
-                          </div>
-                        )}
-                        
-                        <div className="absolute -right-6 -top-6 opacity-10 group-hover:scale-125 group-hover:rotate-45 transition-all duration-700">
-                          <Crown className="w-32 h-32 rotate-12" />
-                        </div>
-                        
-                        <div className="relative z-10 space-y-6">
-                          <div className="flex items-start justify-between">
-                            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                              <TierIcon className="w-5 h-5 text-white" />
-                            </div>
-                            <Badge className={cn(
-                              "text-[9px] font-black uppercase tracking-wider border-0",
-                              membership.tier === 'exclusive' 
-                                ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-black'
-                                : 'bg-white/20 text-white'
-                            )}>
-                              {membership.tier.toUpperCase()}
-                            </Badge>
-                          </div>
-                          
-                          <div>
-                            <span className="text-xs font-bold tracking-widest opacity-70 uppercase block mb-1">
-                              {durationText} • {branchName}
-                            </span>
-                            <h4 className="text-4xl font-serif font-bold">${membership.price}</h4>
-                            <h5 className="text-xl font-semibold mt-2">{membership.name}</h5>
-                          </div>
-                          
-                          <p className="text-sm opacity-90 line-clamp-2">
-                            {membership.description}
-                          </p>
-                          
-                          <div className="space-y-2">
-                            <span className="text-[10px] uppercase tracking-widest opacity-60 block">Key Benefits</span>
-                            <div className="space-y-1.5">
-                              {membership.benefits.slice(0, 3).map((benefit, index) => (
-                                <div key={index} className="flex items-center gap-2">
-                                  <Check className="w-3 h-3 text-green-300" />
-                                  <span className="text-xs opacity-90">{benefit}</span>
-                                </div>
-                              ))}
-                              {membership.benefits.length > 3 && (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-3 h-3 flex items-center justify-center">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-white/50"></div>
-                                  </div>
-                                  <span className="text-xs opacity-70">
-                                    +{membership.benefits.length - 3} more benefits
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="pt-4 flex items-center justify-between border-t border-white/20">
-                            <div className="space-y-1">
-                              <span className="text-[10px] uppercase tracking-widest opacity-60">Available At</span>
-                              <div className="flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />
-                                <span className="text-xs font-semibold">
-                                  {branchCountText}
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="rounded-full bg-white/10 hover:bg-white/20 text-white"
-                            >
-                              <ArrowRight className="w-5 h-5" />
-                            </Button>
-                          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {categories.map((category) => (
+                <div 
+                  key={category.id} 
+                  className="group cursor-pointer bg-white border border-gray-100 rounded-[2rem] overflow-hidden hover:border-secondary/30 hover:shadow-2xl transition-all duration-500 hover:-translate-y-2"
+                >
+                  <div className="relative aspect-[4/3] overflow-hidden">
+                    <img 
+                      src={category.image} 
+                      alt={category.name}
+                      className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                      onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?q=80&w=2070&auto=format&fit=crop';
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    <div className="absolute top-6 right-6">
+                      <Badge className="bg-white/90 backdrop-blur-md text-primary border-none px-3 py-1 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl">
+                        {category.type}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="p-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-xl font-serif font-bold text-primary group-hover:text-secondary transition-colors duration-300">
+                          {category.name}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-2">
+                          <MapPin className="w-3 h-3 text-secondary" />
+                          <span className="text-[10px] text-gray-500 uppercase tracking-widest">
+                            {category.branchCity}
+                          </span>
                         </div>
                       </div>
-                    </CarouselItem>
-                  );
-                })}
-              </CarouselContent>
-              <div className="hidden md:flex justify-end gap-3 mt-8">
-                <CarouselPrevious className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
-                <CarouselNext className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
-              </div>
-            </Carousel>
+                      <div className="w-10 h-10 rounded-xl bg-secondary/10 flex items-center justify-center group-hover:bg-secondary group-hover:text-primary transition-all duration-500">
+                        <Grid3X3 className="w-5 h-5 text-secondary group-hover:text-primary" />
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-2 mb-6 font-light leading-relaxed">
+                      {category.description || "Premium collection for the modern gentleman"}
+                    </p>
+                    <div className="flex items-center justify-between pt-6 border-t border-gray-100">
+                      <div>
+                        <span className="text-[10px] uppercase tracking-widest text-gray-500 block mb-1">
+                          Available At
+                        </span>
+                        <span className="text-xs font-semibold text-primary">
+                          {category.branchName}
+                        </span>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="rounded-full bg-secondary/10 text-secondary hover:bg-secondary hover:text-primary transition-all duration-500"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </section>
@@ -1159,6 +1017,279 @@ export default function Home() {
         </div>
       </section>
 
+
+<section className="py-20 px-4 bg-gray-50/50 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.03] pointer-events-none"></div>
+        <div className="max-w-7xl mx-auto relative z-10">
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
+            <div className="space-y-2">
+              <div className="inline-block bg-secondary/10 px-3 py-1 rounded-full">
+                <span className="text-secondary font-bold tracking-[0.2em] uppercase text-[10px]">Exclusive Privileges</span>
+              </div>
+              <h2 className="text-4xl md:text-5xl font-serif font-bold text-primary">Member Rewards</h2>
+              <Badge variant="outline" className="border-secondary/30 text-secondary mt-2">
+                {totalActiveOffers} Active Offers Available
+              </Badge>
+            </div>
+            <p className="text-muted-foreground max-w-md text-sm font-light">
+              Unlock premium benefits and exclusive savings designed for our most loyal patrons.
+            </p>
+          </div>
+          
+          {offers.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
+              <Ticket className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-2xl font-serif font-bold text-gray-400 mb-2">No Offers Available</h3>
+              <p className="text-gray-400 font-light">Add active offers to Firebase to see them here</p>
+              <Button 
+                onClick={fetchHomeData} 
+                className="mt-4 bg-secondary hover:bg-secondary/90 text-primary"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+          ) : (
+            <Carousel opts={{ align: "start", loop: true }} className="w-full">
+              <CarouselContent className="-ml-6">
+                {offers.map((offer) => {
+                  const discountText = formatDiscount(offer);
+                  const offerBgColor = getOfferBgColor(offer.offerType);
+                  
+                  return (
+                    <CarouselItem key={offer.id} className="pl-6 md:basis-1/2 lg:basis-1/4">
+                      <div className={cn(
+                        "p-8 rounded-3xl text-white relative overflow-hidden group cursor-pointer transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-2",
+                        offerBgColor
+                      )}>
+                        {offer.usageLimit && (
+                          <div className="absolute top-4 left-4 bg-black/30 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full z-20">
+                            {offer.usedCount}/{offer.usageLimit} USED
+                          </div>
+                        )}
+                        
+                        <div className="absolute -right-6 -top-6 opacity-10 group-hover:scale-125 group-hover:rotate-45 transition-all duration-700">
+                          <Ticket className="w-32 h-32 rotate-12" />
+                        </div>
+                        
+                        {offer.imageUrl && (
+                          <div className="absolute inset-0 opacity-20">
+                            <img 
+                              src={offer.imageUrl} 
+                              alt={offer.title}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        )}
+                        
+                        <div className="relative z-10 space-y-6">
+                          <div className="flex items-start justify-between">
+                            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                              <Zap className="w-5 h-5 text-white" />
+                            </div>
+                            <Badge className={cn(
+                              "text-[9px] font-black uppercase tracking-wider border-0",
+                              getOfferBadgeColor(offer.offerType)
+                            )}>
+                              {offer.offerType.toUpperCase()}
+                            </Badge>
+                          </div>
+                          
+                          <div>
+                            <span className="text-xs font-bold tracking-widest opacity-70 uppercase block mb-1">
+                              {offer.branchNames?.length > 0 
+                                ? `${offer.branchNames[0]}${offer.branchNames.length > 1 ? ` +${offer.branchNames.length - 1} more` : ''}`
+                                : 'All Branches'}
+                            </span>
+                            <h4 className="text-4xl font-serif font-bold">{discountText}</h4>
+                            <h5 className="text-xl font-semibold mt-2">{offer.title}</h5>
+                          </div>
+                          
+                          <p className="text-sm opacity-90 line-clamp-2">
+                            {offer.description}
+                          </p>
+                          
+                          <div className="pt-4 flex items-center justify-between border-t border-white/20">
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase tracking-widest opacity-60">Valid Until</span>
+                              <div className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                <span className="text-xs font-semibold">
+                                  {offer.validTo.toLocaleDateString('en-US', { 
+                                    month: 'short', 
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="rounded-full bg-white/10 hover:bg-white/20 text-white"
+                            >
+                              <ArrowRight className="w-5 h-5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CarouselItem>
+                  );
+                })}
+              </CarouselContent>
+              <div className="hidden md:flex justify-end gap-3 mt-8">
+                <CarouselPrevious className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
+                <CarouselNext className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
+              </div>
+            </Carousel>
+          )}
+        </div>
+      </section>
+
+
+  <section className="py-20 px-4 bg-white relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/diamond.png')] opacity-[0.02] pointer-events-none"></div>
+        <div className="max-w-7xl mx-auto relative z-10">
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
+            <div className="space-y-2">
+              <div className="inline-block bg-secondary/10 px-3 py-1 rounded-full">
+                <span className="text-secondary font-bold tracking-[0.2em] uppercase text-[10px]">Elite Access</span>
+              </div>
+              <h2 className="text-4xl md:text-5xl font-serif font-bold text-primary">Exclusive Memberships</h2>
+              <Badge variant="outline" className="border-secondary/30 text-secondary mt-2">
+                {totalActiveMemberships} Premium Plans Available
+              </Badge>
+            </div>
+            <p className="text-muted-foreground max-w-md text-sm font-light">
+              Join our elite community and unlock unprecedented benefits, priority access, and exclusive privileges.
+            </p>
+          </div>
+          
+          {memberships.length === 0 ? (
+            <div className="text-center py-20 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
+              <Crown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-2xl font-serif font-bold text-gray-400 mb-2">No Memberships Available</h3>
+              <p className="text-gray-400 font-light">Add membership plans to Firebase to see them here</p>
+              <Button 
+                onClick={fetchHomeData} 
+                className="mt-4 bg-secondary hover:bg-secondary/90 text-primary"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+          ) : (
+            <Carousel opts={{ align: "start", loop: true }} className="w-full">
+              <CarouselContent className="-ml-6">
+                {memberships.map((membership) => {
+                  const TierIcon = getMembershipTierIcon(membership.tier);
+                  const membershipBgColor = getMembershipTierColor(membership.tier);
+                  const durationText = formatDuration(membership.duration);
+                  const branchName = getFirstBranchName(membership);
+                  const branchCountText = getBranchCountText(membership);
+                  
+                  return (
+                    <CarouselItem key={membership.id} className="pl-6 md:basis-1/2 lg:basis-1/4">
+                      <div className={cn(
+                        "p-8 rounded-3xl text-white relative overflow-hidden group cursor-pointer transition-all duration-500 hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-2",
+                        membershipBgColor
+                      )}>
+                        {membership.totalSubscriptions > 10 && (
+                          <div className="absolute top-4 left-4 bg-white/20 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1 rounded-full z-20">
+                            POPULAR
+                          </div>
+                        )}
+                        
+                        <div className="absolute -right-6 -top-6 opacity-10 group-hover:scale-125 group-hover:rotate-45 transition-all duration-700">
+                          <Crown className="w-32 h-32 rotate-12" />
+                        </div>
+                        
+                        <div className="relative z-10 space-y-6">
+                          <div className="flex items-start justify-between">
+                            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                              <TierIcon className="w-5 h-5 text-white" />
+                            </div>
+                            <Badge className={cn(
+                              "text-[9px] font-black uppercase tracking-wider border-0",
+                              membership.tier === 'exclusive' 
+                                ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-black'
+                                : 'bg-white/20 text-white'
+                            )}>
+                              {membership.tier.toUpperCase()}
+                            </Badge>
+                          </div>
+                          
+                          <div>
+                            <span className="text-xs font-bold tracking-widest opacity-70 uppercase block mb-1">
+                              {durationText} • {branchName}
+                            </span>
+                            <h4 className="text-4xl font-serif font-bold">${membership.price}</h4>
+                            <h5 className="text-xl font-semibold mt-2">{membership.name}</h5>
+                          </div>
+                          
+                          <p className="text-sm opacity-90 line-clamp-2">
+                            {membership.description}
+                          </p>
+                          
+                          <div className="space-y-2">
+                            <span className="text-[10px] uppercase tracking-widest opacity-60 block">Key Benefits</span>
+                            <div className="space-y-1.5">
+                              {membership.benefits.slice(0, 3).map((benefit, index) => (
+                                <div key={index} className="flex items-center gap-2">
+                                  <Check className="w-3 h-3 text-green-300" />
+                                  <span className="text-xs opacity-90">{benefit}</span>
+                                </div>
+                              ))}
+                              {membership.benefits.length > 3 && (
+                                <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 flex items-center justify-center">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-white/50"></div>
+                                  </div>
+                                  <span className="text-xs opacity-70">
+                                    +{membership.benefits.length - 3} more benefits
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="pt-4 flex items-center justify-between border-t border-white/20">
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase tracking-widest opacity-60">Available At</span>
+                              <div className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />
+                                <span className="text-xs font-semibold">
+                                  {branchCountText}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="rounded-full bg-white/10 hover:bg-white/20 text-white"
+                            >
+                              <ArrowRight className="w-5 h-5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CarouselItem>
+                  );
+                })}
+              </CarouselContent>
+              <div className="hidden md:flex justify-end gap-3 mt-8">
+                <CarouselPrevious className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
+                <CarouselNext className="static translate-y-0 border-primary/10 hover:bg-primary hover:text-white transition-all" />
+              </div>
+            </Carousel>
+          )}
+        </div>
+      </section>
       <section className="py-32 px-4 bg-gray-50/50 overflow-hidden relative">
         <div className="max-w-7xl mx-auto relative z-10">
           <div className="text-center mb-20">

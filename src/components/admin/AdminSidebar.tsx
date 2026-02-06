@@ -857,12 +857,7 @@ const branchAdminNavItems = [
     icon: Award,
     pageKey: 'membership'
   },
-  {
-    title: 'Branches',
-    href: '/admin/branches',
-    icon: Building,
-    pageKey: 'branches'
-  },
+ 
   {
     title: 'Messages',
     href: '/admin/messages',

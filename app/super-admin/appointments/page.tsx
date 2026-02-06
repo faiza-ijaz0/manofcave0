@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, Clock, User, Search, Filter, CheckCircle, XCircle, AlertCircle, Building, Phone, Mail, DollarSign, Loader2, RefreshCw, ChevronDown, MapPin, Shield, Check, X } from "lucide-react";
+import { Calendar, Clock, User, Search, CheckCircle, XCircle, AlertCircle, Building, Phone, Mail, DollarSign, RefreshCw, ChevronDown, MapPin, Shield, Check, X } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AdminSidebar, AdminMobileSidebar } from "@/components/admin/AdminSidebar";
 import { useAuth } from "@/contexts/AuthContext";
@@ -119,7 +118,6 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
 
   // Fetch all appointments
   fetchAppointments: async () => {
-    set({ isLoading: true, error: null });
     try {
       const appointmentsRef = collection(db, 'bookings');
       const q = query(appointmentsRef, orderBy('createdAt', 'desc'));
@@ -359,7 +357,7 @@ const useAppointmentsStore = create<AppointmentsStore>((set, get) => ({
 export default function SuperAdminAppointments() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Sidebar by default open
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -376,7 +374,7 @@ export default function SuperAdminAppointments() {
     fetchCustomerPhone
   } = useAppointmentsStore();
 
-  // Fetch data on mount and setup real-time updates
+  // Fetch data on mount
   useEffect(() => {
     fetchAppointments();
   }, [fetchAppointments]);
@@ -495,20 +493,6 @@ export default function SuperAdminAppointments() {
   // Get today's date for the date picker
   const today = new Date().toISOString().split('T')[0];
 
-  if (isLoading) {
-    return (
-      <ProtectedRoute requiredRole="super_admin">
-        <div className="flex h-screen bg-gray-50 items-center justify-center">
-          <div className="text-center space-y-4">
-            <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
-            <p className="text-lg font-semibold text-primary">Loading appointments...</p>
-            <p className="text-sm text-gray-500">Fetching real-time data from Firebase</p>
-          </div>
-        </div>
-      </ProtectedRoute>
-    );
-  }
-
   return (
     <ProtectedRoute requiredRole="super_admin">
       <div className="flex h-screen bg-gray-50">
@@ -518,7 +502,7 @@ export default function SuperAdminAppointments() {
           onLogout={handleLogout}
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
-          className ={cn(
+          className={cn(
             "hidden lg:block transition-all duration-300",
             sidebarOpen ? "w-64" : "w-0"
           )}
@@ -560,7 +544,7 @@ export default function SuperAdminAppointments() {
                 
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">All Appointments</h1>
-                  <p className="text-sm text-gray-600">Manage appointments across all branches (Real-time Firebase Data)</p>
+                  <p className="text-sm text-gray-600">Manage appointments across all branches</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
@@ -568,9 +552,8 @@ export default function SuperAdminAppointments() {
                   onClick={fetchAppointments}
                   variant="outline" 
                   className="gap-2"
-                  disabled={isLoading}
                 >
-                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className="w-4 h-4" />
                   Refresh
                 </Button>
                 <span className="text-sm text-gray-600 hidden sm:block">
@@ -663,10 +646,7 @@ export default function SuperAdminAppointments() {
                   <div className="text-2xl font-bold text-red-700">{stats.cancelled}</div>
                   <div className="text-sm text-red-600 font-medium">Cancelled</div>
                 </div>
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                  <div className="text-2xl font-bold text-gray-700">{stats.noShow}</div>
-                  <div className="text-sm text-gray-600 font-medium">No Show</div>
-                </div>
+               
               </div>
 
               {/* Filters */}

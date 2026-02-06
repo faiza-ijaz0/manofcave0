@@ -278,12 +278,7 @@ export default function CustomerLogin() {
                     </Button>
                   </form>
 
-                  {/* Demo Credentials */}
-                  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <p className="text-xs font-bold text-blue-800 mb-2">Demo Credentials:</p>
-                    <p className="text-xs text-blue-700">Email: customer@manofcave.com</p>
-                    <p className="text-xs text-blue-700">Password: customer123</p>
-                  </div>
+                 
                 </CardContent>
               </TabsContent>
               
