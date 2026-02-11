@@ -44,9 +44,22 @@ export function Header() {
           {/* <Link href="/customer/login" className="text-xs uppercase tracking-widest font-semibold text-primary/70 hover:text-secondary hidden sm:block transition-colors">
             Sign In
           </Link> */}
-          <Link href="/customer/portal" className="-mr-10 inline-flex">
+          {/* <Link href="/customer/portal" className="-mr-10 inline-flex">
   <User className="text-6xl font-bold text-black-500" />
+</Link> */}
+
+
+
+ <Link 
+  href="/customer/portal" 
+  className="group flex -mr-10 items-center justify-center  w-10 h-10 rounded-full bg-secondary hover:bg-secondary-500 transition-all duration-300 shadow-md hover:shadow-lg"
+>
+  <User className="w-5 h-5 text-white group-hover:scale-110 transition-transform duration-200" />
 </Link>
+
+
+
+
           <Button asChild className="bg-secondary hover:bg-secondary/90 text-primary rounded-lg px-6 py-2 text-xs tracking-widest font-bold shadow-md shadow-secondary/20 transition-all duration-300 hover:scale-105 active:scale-95">
             <Link href="/services">BOOK NOW</Link>
           </Button>
